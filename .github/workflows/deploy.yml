@@ -37,11 +37,21 @@ jobs:
         env:
           PUBLIC_BUILD: "1"
 
-      - name: Prüfen, dass keine persönlichen Daten enthalten sind
+      - name: Datenschutz-Prüfung
         run: |
-          if grep -rqE "Akka 3000|Kerncurriculum|Convalentismus" dist; then
-            echo "Persönliche Startdaten im Build gefunden – Abbruch."
-            exit 1
+          # Persönliche Startdaten tragen eine Markierung und liegen in src/seed/private/ (nie im Repo, nie im Build).
+          if [ -n "$(git ls-files src/seed/private)" ]; then
+            echo "src/seed/private ist im Repository – Abbruch."; exit 1
+          fi
+          if grep -rq "skills-private-seed-7f3a" dist; then
+            echo "Persönliche Startdaten im Build gefunden – Abbruch."; exit 1
+          fi
+          if grep -rqE "window[.](db|app)[ ]*=" dist/assets; then
+            echo "Test-Zugang (window.db) im Build gefunden – Abbruch."; exit 1
+          fi
+          # Die öffentliche Bibliothek (src/library) darf keine Sessions, Notizen, To-dos usw. enthalten.
+          if grep -rqiE "(sessions|todos|inbox|wishes)[^a-z]{1,3}:" src/library; then
+            echo "Persönliche Daten in src/library – Abbruch."; exit 1
           fi
 
       - uses: actions/configure-pages@v5

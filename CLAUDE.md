@@ -1,0 +1,49 @@
+# CLAUDE.md – Skills (PWA)
+
+Für jede neue Claude-Code-Sitzung (lokal oder in der Cloud über GitHub). Zuerst lesen.
+
+## Projektziel
+Kostenlose Web-App „Skills“: eine persönliche Skill-Sammlung (lernen, üben, tracken), installierbar als PWA auf iPhone/iPad.
+Sie muss sich wie eine native iOS-App anfühlen. Die Oberfläche ist **deutsch**. Backup, Import und Abgleich sind eingebaut.
+Vorhandene Nutzerdaten (IndexedDB) müssen jedes Update überleben: nur Dexie-Migrationen, nie Datenbank neu anlegen oder leeren.
+
+## Technik
+React 19, Vite 8, TypeScript 7, Dexie 4 (IndexedDB), vite-plugin-pwa. Tests: Vitest + fake-indexeddb. Browser-Tests: playwright-core (Edge, WebKit).
+Veröffentlicht auf GitHub Pages: https://rubexskill.github.io/skill-app/ (Konto `rubexskill`, Repo `skill-app`, Quelle „GitHub Actions“).
+
+## Aufbau (src/)
+- `db.ts` Dexie-Schema und Migrationen · `logic.ts` Anlegen/Ändern/Löschen/Rückgängig · `sync.ts` Abgleich zweier Datenbestände · `mdparse.ts` Markdown-Import · `exam.ts` Abschlusstest · `srs.ts` Wiederholungsplan (SM-2-light)
+- `seed.ts` Startdaten + `withDefaults` (ordnet Schätzwerte/Steckbriefe über Originalname bzw. Kurztitel zu)
+- `library/` **öffentliche Skill-Bibliothek**: `Skills.md` (Originalname je Kategorie; die Überschrift bestimmt den Typ: „Gewohnheiten“ = Gewohnheit, „Projekte & Besorgungen“ = Projekt, sonst Skill), `meta.ts` (Originalname, Kurztitel, Schätzwerte), `profiles1-3.ts` (Steckbriefe, Schlüssel = Kurztitel), `types.ts`
+- `seed/data-empty.ts` leere Startdaten (öffentlicher Build); `seed/private/` **nur lokal, gitignored**: persönliche Startliste (Notizen, Apps, Test-Session)
+- `screens/` Bildschirme · `components/` UI-Bausteine · `trainer/` Trainer (Morse mit Koch-Kurs, Kopfrechnen, Wochentag/Doomsday, Flaggen, Atem, Stoppuhr, Karteikarten; `audio.ts` iOS-Ton) · `styles.css` gesamtes Design
+- `tests/` Vitest-Tests (Doomsday, Morse, Wiederholungsplan, Abgleich, Import, Statistik)
+
+## Design-Regeln
+- **Stil „Variante B“**: warmes Papier (hell `#f5f0e8`), dunkle Tinte, Kategorien mit eigener Farbe, Zahlen in SF Pro Rounded. Hell/Dunkel nach System, Umschalter unter „Mehr → Darstellung“.
+- **Apple-Stil**: Tab-Leiste, Navigationsleisten, Auswahlblätter (Action Sheets), Wischgesten, Rückgängig-Hinweis statt Rückfrage, Sicherheitsabstände (Notch/Home-Balken), 44-pt-Tippflächen. iPhone und iPad (hoch/quer) müssen gut aussehen.
+- **Nichts KI-Typisches**: keine Verläufe-Orgien, keine Glühen-/Neon-Effekte, keine Emoji-Deko, keine Floskeln („Entdecke…“, „Tauche ein…“), keine generischen Karten-Raster. Ruhige, sachliche deutsche Texte.
+- Leere Zustände sind sinnvoll formuliert; keine Pflichtfragen beim Anlegen.
+
+## Datenschutz-Regeln (wichtig)
+- Persönliche Daten kommen **nie** ins Repo oder in den öffentlichen Build: Sessions, Notizen, Status, To-dos, Inbox, Wunschliste, Begriffe, Karteikarten, Backups, Name/E-Mail der Person.
+- `src/seed/private/` ist gitignored; seine Dateien tragen die Markierung `skills-private-seed-7f3a`. Nie aus dem Ordner kopieren oder die Markierung entfernen.
+- In `src/library/` stehen nur allgemeine Skill-Daten (Namen, Kategorie, Typ, Schätzwerte, Steckbriefe).
+- Öffentlicher Build immer mit `PUBLIC_BUILD=1` (leere Startdaten). `VITE_EXPOSE=1` (window.db/window.app für Tests) nur für Test-Builds, nie veröffentlichen.
+- Der Workflow bricht ab, wenn private Dateien im Repo liegen, die Markierung oder `window.db` im Build steht oder `src/library` Sessions/To-dos/Inbox-Daten enthält.
+- Keine personenbezogenen Angaben in Commits, Issues, Beschreibungen oder Anfragen an externe Dienste. Commit-Identität: `rubexskill <rubexskill@users.noreply.github.com>`.
+
+## Testen
+- `npm test` (Vitest, muss grün sein) · `npx tsc -b` (Typen) · `PUBLIC_BUILD=1 npm run build`
+- Browser-Test: Test-Build mit `PUBLIC_BUILD=1 VITE_EXPOSE=1 npx vite build --outDir <tmp>/dist-test --emptyOutDir`, dann Playwright (Edge, WebKit) mit `context.route` auf eine Fake-Adresse; Wischgesten per CDP-Touch (nur Chromium). Formate prüfen: iPhone/iPad, hoch/quer, hell/dunkel.
+- Ton lässt sich nur mit Fake-AudioContext prüfen; echte Hörprobe nur auf dem iPhone.
+- Bei jeder Änderung an Daten: Migration, Backup→Import und Abgleich mitprüfen.
+
+## Veröffentlichen
+Push auf `main` startet `.github/workflows/deploy.yml`: `npm ci` → `npm test` → Build (`PUBLIC_BUILD=1`) → Datenschutz-Prüfung → GitHub Pages. Erst veröffentlichen, wenn Tests und Typen grün sind. Nur auf ausdrücklichen Wunsch pushen.
+Lauf prüfen: GitHub-API (`gh` ist lokal nicht installiert). Nach einem Update muss die installierte Web-App einmal geschlossen und neu geöffnet werden.
+
+## Arbeitsweise
+- Unbeaufsichtigt: keine Fragen, sinnvolle Entscheidungen treffen und am Ende auflisten.
+- Nichts außerhalb des Projektordners löschen. Das Obsidian-Plugin ist aufgegeben, nicht anfassen.
+- Quellen für Trainer-Inhalte stehen in der App unter „So funktioniert’s“; neue Inhalte mit seriösen Quellen belegen.

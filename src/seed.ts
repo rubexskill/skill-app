@@ -1,5 +1,6 @@
-// Lokal: persönliche Startdaten aus src/seed/private. Online-Build: leere Daten (siehe vite.config.ts).
-import { APPS_MD as appsMd, META_ROWS, PROFILES, SKILLS_MD as skillsMd } from "@seed-data";
+// Lokal: persönliche Startdaten aus src/seed/private. Online-Build: keine Startdaten. Bibliothek (Schätzwerte, Steckbriefe): src/library.
+import { APPS_MD as appsMd, SKILLS_MD as skillsMd } from "@seed-data";
+import { META_ROWS, PROFILES } from "./library";
 import type { AppIdea, Metric, Milestone, Movement, Place, Profile, Season, Session, Skill, Status, TodoList, Typ } from "./db";
 
 
