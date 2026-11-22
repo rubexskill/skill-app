@@ -1,0 +1,58 @@
+# Baut die App bei jeder Änderung auf "main" und veröffentlicht sie auf GitHub Pages.
+name: Auf GitHub Pages veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Öffentliche Version bauen (ohne persönliche Startdaten)
+        run: npm run build
+        env:
+          PUBLIC_BUILD: "1"
+
+      - name: Prüfen, dass keine persönlichen Daten enthalten sind
+        run: |
+          if grep -rqE "Akka 3000|Kerncurriculum|Convalentismus" dist; then
+            echo "Persönliche Startdaten im Build gefunden – Abbruch."
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

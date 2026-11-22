@@ -1,0 +1,19 @@
+# Abhängigkeiten und Build
+node_modules
+dist
+dev-dist
+*.log
+
+# Persönliche Startdaten (Skill-Liste, Apps, Steckbriefe) – nur lokal, nie veröffentlichen
+src/seed/private/
+
+# Lokale Dateien
+.DS_Store
+Thumbs.db
+.env
+.env.*
+
+# Design-Vorschau (enthält Beispielnamen aus der persönlichen Liste) – nur lokal
+design-vorschau/
+src/preview/
+*.tsbuildinfo
