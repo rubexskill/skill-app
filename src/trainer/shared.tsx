@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Skill } from "../db";
 import { elapsedLabel } from "../logic";
+import { audioState, playTestTone, type AudioState } from "./audio";
 
 export interface TrainerResult {
   /** Übungszeit, wird als Session gespeichert (ab 1 Minute) */
@@ -27,14 +28,39 @@ export const shuffle = <T,>(list: T[]): T[] => {
 export const round1 = (n: number) => Math.round(n * 10) / 10;
 export const de1 = (n: number) => round1(n).toString().replace(".", ",");
 
+export interface HowTo {
+  points: string[];
+  sources: { label: string; url?: string }[];
+}
+
+/** Kurze Erklärung mit Quelle, klappt auf */
+export function HowToBox({ how }: { how: HowTo }) {
+  return (
+    <details className="tr-how">
+      <summary>So funktioniert’s</summary>
+      <ul>{how.points.map((p) => <li key={p}>{p}</li>)}</ul>
+      <div className="tr-sources">
+        Quellen:{" "}
+        {how.sources.map((s, i) => (
+          <span key={s.label}>
+            {i > 0 && " · "}
+            {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">{s.label}</a> : s.label}
+          </span>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 /** Einrichtungsmaske vor dem Start */
-export function Setup({ title, lead, children, onStart, startLabel = "Los", notice }: {
+export function Setup({ title, lead, children, onStart, startLabel = "Los", notice, how }: {
   title: string;
   lead?: string;
   children?: ReactNode;
   onStart: () => void;
   startLabel?: string;
   notice?: string;
+  how?: HowTo;
 }) {
   return (
     <div className="tr-setup">
@@ -43,12 +69,49 @@ export function Setup({ title, lead, children, onStart, startLabel = "Los", noti
       {notice && <div className="safety tr-notice"><p>{notice}</p></div>}
       {children}
       <button className="btn btn-primary tr-start" onClick={onStart}>{startLabel}</button>
+      {how && <HowToBox how={how} />}
     </div>
   );
 }
 
+/** Test-Ton mit Hinweisen, falls auf dem iPhone nichts zu hören ist */
+export function AudioCheck({ always = false }: { always?: boolean }) {
+  const [state, setState] = useState<AudioState | null>(null);
+  const [tried, setTried] = useState(false);
+  const press = async () => {
+    setTried(true);
+    setState(await playTestTone());
+  };
+  const blocked = state !== null && state !== "running";
+  return (
+    <div className="tr-audio">
+      <button className="btn btn-secondary btn-small" onClick={() => void press()}>Test-Ton abspielen</button>
+      {(tried || always) && (
+        <p className={`tr-audio-note${blocked ? " is-warn" : ""}`}>
+          {blocked
+            ? "Der Ton wurde vom System noch nicht freigegeben. Tippe den Knopf noch einmal. Hilft das nicht: App schließen und neu öffnen."
+            : tried
+              ? "Hast du drei Töne gehört? Wenn nicht: Lautstärke am iPhone hochdrehen, den Stummschalter an der Seite prüfen, Bluetooth-Kopfhörer abtrennen und die App einmal schließen und neu öffnen."
+              : "Kein Ton? Teste ihn hier."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function useAudioState(): AudioState {
+  const [s, setS] = useState<AudioState>(audioState());
+  useEffect(() => {
+    const t = window.setInterval(() => setS(audioState()), 800);
+    return () => window.clearInterval(t);
+  }, []);
+  return s;
+}
+
 export interface RoundStat {
   right: number;
+  /** Teilpunkte (z. B. Zeichen einer Gruppe), sonst gleich right */
+  credit: number;
   total: number;
   totalMs: number;
 }
@@ -58,24 +121,44 @@ interface RoundProps<T> {
   prompt: (t: T, i: number) => ReactNode;
   input: { kind: "number" } | { kind: "text"; placeholder?: string } | { kind: "choices"; options: (t: T) => string[]; columns?: number };
   isRight: (t: T, answer: string) => boolean;
+  /** Teilpunkte 0..1 für eine Antwort, wenn nicht nur richtig/falsch zählt */
+  credit?: (t: T, answer: string) => number;
   /** Anzeige der richtigen Lösung */
   correct: (t: T) => string;
+  /** Erklärung nach einer falschen Antwort */
+  explain?: (t: T) => ReactNode;
   onFinish: (s: RoundStat) => void;
   onRestart: () => void;
+  /** Wird einmal aufgerufen, sobald die Runde ausgewertet ist */
+  onComplete?: (s: RoundStat) => void;
   note?: (s: RoundStat) => string | null;
 }
 
-/** Eine Runde mit mehreren Aufgaben: Frage, Eingabe, Rückmeldung, Auswertung. */
-export function Round<T>({ tasks, prompt, input, isRight, correct, onFinish, onRestart, note }: RoundProps<T>) {
+/** Eine Runde mit mehreren Aufgaben, danach können die Fehler noch einmal geübt werden. */
+export function Round<T>(props: RoundProps<T>) {
+  const [retry, setRetry] = useState<{ tasks: T[]; orig: RoundStat } | null>(null);
+  const [gen, setGen] = useState(0);
+  return (
+    <RoundCore key={gen} {...props} tasks={retry ? retry.tasks : props.tasks} practice={retry?.orig ?? null}
+      onRetry={(wrong, s) => {
+        setRetry({ tasks: shuffle(wrong), orig: retry ? { ...retry.orig, totalMs: retry.orig.totalMs + s.totalMs } : s });
+        setGen((g) => g + 1);
+      }} />
+  );
+}
+
+function RoundCore<T>({ tasks, prompt, input, isRight, credit, correct, explain, onFinish, onRestart, onComplete, note, practice, onRetry }: RoundProps<T> & { practice: RoundStat | null; onRetry: (wrong: T[], s: RoundStat) => void }) {
   const [i, setI] = useState(0);
   const [value, setValue] = useState("");
   const [fb, setFb] = useState<{ ok: boolean; chosen: string } | null>(null);
-  const [stat, setStat] = useState<RoundStat>({ right: 0, total: tasks.length, totalMs: 0 });
+  const [stat, setStat] = useState<RoundStat>({ right: 0, credit: 0, total: tasks.length, totalMs: 0 });
+  const [wrong, setWrong] = useState<T[]>([]);
   const [done, setDone] = useState(false);
   const started = useRef(Date.now());
   const timer = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(Date.now());
+  const completed = useRef(false);
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 500);
@@ -94,38 +177,51 @@ export function Round<T>({ tasks, prompt, input, isRight, correct, onFinish, onR
   const next = (s: RoundStat) => {
     if (i + 1 >= tasks.length) {
       setDone(true);
+      if (!completed.current && !practice) {
+        completed.current = true;
+        onComplete?.(s);
+      }
       return;
     }
     setI(i + 1);
     setValue("");
     setFb(null);
     started.current = Date.now();
-    void s;
   };
 
   const answer = (a: string) => {
     if (fb || !a.trim()) return;
-    const ok = isRight(task, a.trim());
-    const s = { right: stat.right + (ok ? 1 : 0), total: tasks.length, totalMs: stat.totalMs + (Date.now() - started.current) };
+    const text = a.trim();
+    const ok = isRight(task, text);
+    const c = credit ? credit(task, text) : ok ? 1 : 0;
+    const s = { right: stat.right + (ok ? 1 : 0), credit: stat.credit + c, total: tasks.length, totalMs: stat.totalMs + (Date.now() - started.current) };
     setStat(s);
-    setFb({ ok, chosen: a.trim() });
+    setFb({ ok, chosen: text });
     if (ok) {
       navigator.vibrate?.(8);
       timer.current = window.setTimeout(() => next(s), 550);
+    } else {
+      setWrong((w) => [...w, task]);
     }
   };
 
   if (done) {
     const avg = stat.totalMs / 1000 / stat.total;
-    const n = note?.(stat);
+    const n = practice ? null : note?.(stat);
     return (
       <div className="tr-result">
+        {practice && <div className="tr-sub">Fehler wiederholt</div>}
         <div className="tr-big"><span className="num">{stat.right}</span><span className="unit"> von {stat.total}</span></div>
         <div className="tr-sub">richtig · Ø {de1(avg)} s pro Aufgabe</div>
         {n && <p className="tr-note">{n}</p>}
+        {wrong.length > 0 && (
+          <button className="btn btn-secondary tr-retry" onClick={() => onRetry(wrong, stat)}>
+            {wrong.length === 1 ? "Den Fehler wiederholen" : `${wrong.length} Fehler wiederholen`}
+          </button>
+        )}
         <div className="tr-result-actions">
-          <button className="btn btn-secondary" onClick={onRestart}>Nochmal</button>
-          <button className="btn btn-primary" onClick={() => onFinish(stat)}>Fertig</button>
+          <button className="btn btn-secondary" onClick={onRestart}>Neue Runde</button>
+          <button className="btn btn-primary" onClick={() => onFinish(practice ? { ...practice, totalMs: practice.totalMs + stat.totalMs } : stat)}>Fertig</button>
         </div>
       </div>
     );
@@ -134,7 +230,7 @@ export function Round<T>({ tasks, prompt, input, isRight, correct, onFinish, onR
   return (
     <div className="tr-run">
       <div className="tr-top">
-        <span>{i + 1} von {tasks.length}</span>
+        <span>{practice ? "Fehler üben · " : ""}{i + 1} von {tasks.length}</span>
         <span className="tr-clock">{elapsedLabel(now - started.current)}</span>
       </div>
       <div className="tr-progress"><i style={{ width: `${(i / tasks.length) * 100}%` }} /></div>
@@ -162,46 +258,10 @@ export function Round<T>({ tasks, prompt, input, isRight, correct, onFinish, onR
       {fb && (
         <div className={`tr-fb${fb.ok ? " is-ok" : " is-bad"}`}>
           {fb.ok ? "Richtig" : <>Richtig wäre: <b>{correct(task)}</b></>}
+          {!fb.ok && explain && <div className="tr-explain">{explain(task)}</div>}
           {!fb.ok && <button className="btn btn-secondary btn-small" onClick={() => next(stat)}>Weiter</button>}
         </div>
       )}
     </div>
   );
-}
-
-// ---------------- Ton (Morse) ----------------
-
-let ctx: AudioContext | null = null;
-
-/** Muss durch eine Berührung ausgelöst werden (iOS), danach spielt der Ton auch automatisch. */
-export function prepareAudio() {
-  const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!C) return;
-  ctx ??= new C();
-  void ctx.resume?.();
-}
-
-export function playMorse(code: string, unit = 0.09): number {
-  if (!ctx) prepareAudio();
-  if (!ctx) return 0;
-  let t = ctx.currentTime + 0.06;
-  for (const sym of code) {
-    if (sym === " ") {
-      t += unit * 2;
-      continue;
-    }
-    const len = sym === "-" ? unit * 3 : unit;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 620;
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.25, t + 0.008);
-    gain.gain.setValueAtTime(0.25, t + len - 0.012);
-    gain.gain.linearRampToValueAtTime(0, t + len);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + len + 0.02);
-    t += len + unit;
-  }
-  return t - ctx.currentTime;
 }

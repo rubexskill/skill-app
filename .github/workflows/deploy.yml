@@ -29,6 +29,9 @@ jobs:
       - name: Abhängigkeiten installieren
         run: npm ci
 
+      - name: Automatische Tests
+        run: npm test
+
       - name: Öffentliche Version bauen (ohne persönliche Startdaten)
         run: npm run build
         env:

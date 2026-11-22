@@ -622,6 +622,18 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const { mounted, shown } = usePresence(sheetOpen, 350);
   const close = () => setSheetOpen(false);
 
+  // Mit Tastatur (iPad) lässt sich das Auswahlblatt auch mit Esc schließen
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setSheetOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [sheetOpen]);
+
   return (
     <UIContext.Provider value={{ toast, actionSheet, celebrate, undoable }}>
       {children}

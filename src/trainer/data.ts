@@ -1,15 +1,6 @@
 // Daten für die Mini-Trainer: Morse-Alphabet, Wörter, Länder.
 
-export const MORSE: Record<string, string> = {
-  A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.", G: "--.", H: "....", I: "..", J: ".---",
-  K: "-.-", L: ".-..", M: "--", N: "-.", O: "---", P: ".--.", Q: "--.-", R: ".-.", S: "...", T: "-",
-  U: "..-", V: "...-", W: ".--", X: "-..-", Y: "-.--", Z: "--..",
-  "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-", "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
-};
-
-export const MORSE_EASY = ["E", "T", "A", "N", "I", "M"];
-export const MORSE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-export const MORSE_ALL = [...MORSE_LETTERS, ..."0123456789".split("")];
+export { MORSE, MORSE_ALL, MORSE_EASY, MORSE_LETTERS, morseOf } from "./morse";
 
 export const MORSE_WORDS_EASY = ["SOS", "TAG", "ROT", "MEER", "BALL", "HAUS", "MOND", "BAUM", "HUND", "BROT", "BUCH", "NACHT"];
 export const MORSE_WORDS = [
@@ -18,9 +9,6 @@ export const MORSE_WORDS = [
   "NOTRUF", "INSEL", "STRAND", "WOLKE",
 ];
 
-export function morseOf(word: string): string {
-  return word.split("").map((c) => MORSE[c] ?? "").join(" ");
-}
 
 export interface Country {
   iso: string;
@@ -76,3 +64,6 @@ export const COUNTRIES: Country[] = [
 export function flagOf(iso: string): string {
   return String.fromCodePoint(...iso.split("").map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 }
+
+/** Länder mit mehreren Hauptstädten bzw. umstrittener Hauptstadt – kommen in Hauptstadt-Fragen nicht vor. */
+export const CAPITAL_AMBIGUOUS = new Set(["BO", "ZA", "IL", "CI"]);
