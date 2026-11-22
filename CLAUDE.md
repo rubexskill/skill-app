@@ -15,6 +15,7 @@ Veröffentlicht auf GitHub Pages: https://rubexskill.github.io/skill-app/ (Konto
 - `db.ts` Dexie-Schema und Migrationen · `logic.ts` Anlegen/Ändern/Löschen/Rückgängig · `sync.ts` Abgleich zweier Datenbestände · `mdparse.ts` Markdown-Import · `exam.ts` Abschlusstest · `srs.ts` Wiederholungsplan (SM-2-light)
 - `seed.ts` Startdaten + `withDefaults` (ordnet Schätzwerte/Steckbriefe über Originalname bzw. Kurztitel zu)
 - `library/` **öffentliche Skill-Bibliothek**: `Skills.md` (Originalname je Kategorie; die Überschrift bestimmt den Typ: „Gewohnheiten“ = Gewohnheit, „Projekte & Besorgungen“ = Projekt, sonst Skill), `meta.ts` (Originalname, Kurztitel, Schätzwerte), `profiles1-3.ts` (Steckbriefe, Schlüssel = Kurztitel), `types.ts`
+- `library/dossiers.ts` **Wissens-Dossiers** (recherchiert, mit Quellen; Schlüssel = Kurztitel; Anzeige in `screens/Dossier.tsx` unter „Mehr erfahren“). Videos mit `checked: false`, solange Kanal/Inhalt nicht geöffnet wurden. Quellenhinweise `[n]` müssen zur Quellenliste passen (Test `tests/dossiers.test.ts`).
 - `seed/data-empty.ts` leere Startdaten (öffentlicher Build); `seed/private/` **nur lokal, gitignored**: persönliche Startliste (Notizen, Apps, Test-Session)
 - `screens/` Bildschirme · `components/` UI-Bausteine · `trainer/` Trainer (Morse mit Koch-Kurs, Kopfrechnen, Wochentag/Doomsday, Flaggen, Atem, Stoppuhr, Karteikarten; `audio.ts` iOS-Ton) · `styles.css` gesamtes Design
 - `tests/` Vitest-Tests (Doomsday, Morse, Wiederholungsplan, Abgleich, Import, Statistik)

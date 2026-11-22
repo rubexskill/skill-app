@@ -1375,3 +1375,41 @@ html.has-sorter, html.has-sorter body { overscroll-behavior: none; }
 .todo-list { display: inline-flex; align-items: center; gap: 5px; }
 .todo-list i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
 .quick-hint { font-weight: 600; color: var(--accent); }
+
+/* ---------------- Wissens-Dossier („Mehr erfahren“) ---------------- */
+.ai-tag.is-researched { background: color-mix(in srgb, var(--st-kann) 16%, transparent); color: var(--st-kann); }
+.dossier { display: flex; flex-direction: column; gap: 10px; }
+.dos-ampel { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: 18px; background: var(--bg-elevated); }
+.dos-ampel p { margin: 4px 0 0; font-size: 15px; line-height: 1.45; color: var(--label-2); }
+.dos-ampel-title { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.dos-light { flex: none; width: 14px; height: 14px; margin-top: 5px; border-radius: 50%; background: var(--gray); }
+.dos-ampel.is-gut .dos-light { background: var(--st-kann); }
+.dos-ampel.is-teilweise .dos-light { background: var(--st-rausfinden); }
+.dos-ampel.is-kaum .dos-light { background: var(--danger); }
+.dos-sec { border-radius: 18px; background: var(--bg-elevated); overflow: hidden; }
+.dos-sec summary { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px; list-style: none; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; cursor: pointer; }
+.dos-sec summary::-webkit-details-marker { display: none; }
+.dos-sec summary span:first-child { flex: 1; }
+.dos-count { font-family: var(--rounded); font-size: 14px; font-weight: 600; color: var(--label-2); }
+.dos-chev { color: var(--label-3); transition: transform 0.3s var(--ease); }
+.dos-sec[open] .dos-chev { transform: rotate(180deg); }
+.dos-body { padding: 0 16px 16px; font-size: 15px; line-height: 1.5; }
+.dos-body p { margin: 0 0 10px; }
+.dos-body ul, .dos-body ol { margin: 0; padding-left: 20px; }
+.dos-body li + li { margin-top: 6px; }
+.dos-cite { margin-left: 1px; font-size: 10.5px; font-weight: 700; }
+.dos-cite a { color: var(--accent); text-decoration: none; padding: 0 1px; }
+.dos-plan > div { display: flex; gap: 12px; padding: 8px 0; }
+.dos-plan > div + div { box-shadow: inset 0 0.5px 0 var(--separator); }
+.dos-plan b { flex: none; min-width: 74px; font-family: var(--rounded); }
+.dos-myth + .dos-myth { margin-top: 12px; padding-top: 12px; box-shadow: inset 0 0.5px 0 var(--separator); }
+.dos-myth-q { font-weight: 600; text-decoration: line-through; text-decoration-color: var(--label-3); margin-bottom: 3px; }
+.dos-video { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; color: var(--label); text-decoration: none; }
+.dos-video + .dos-video { box-shadow: inset 0 0.5px 0 var(--separator); }
+.dos-video svg { flex: none; margin-top: 2px; color: var(--accent); }
+.dos-video span { display: flex; flex-direction: column; gap: 2px; }
+.dos-video small { color: var(--label-2); font-size: 13px; line-height: 1.35; }
+.dos-video .dos-unchecked { color: var(--st-rausfinden); }
+.dos-sources small { display: block; color: var(--label-2); font-size: 12.5px; }
+.dos-sources a { color: var(--accent); overflow-wrap: anywhere; }
+.dos-date { margin-top: 12px; font-size: 13px; color: var(--label-2); }

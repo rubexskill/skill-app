@@ -3,11 +3,16 @@ import type { Skill } from "../db";
 import { copyText, parseProfile, profilePrompt, toMilestones, toProfile, updateSkill, youtubeUrl } from "../logic";
 import { AutoTextarea, Group, Row, Sheet, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { dossierFor, DossierView } from "./Dossier";
 
 export function ProfileCard({ skill }: { skill: Skill }) {
   const [editOpen, setEditOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const p = skill.profile;
+  const own = skill.profile;
+  const dossier = dossierFor(skill.title);
+  // Unbearbeiteter KI-Steckbrief wird durch die recherchierte Fassung ersetzt; eigene Texte bleiben.
+  const researched = !!dossier && (!own || own.ai);
+  const p = researched && dossier ? { ...(own ?? { searches: [], ai: false }), about: dossier.steckbrief.about, why: dossier.steckbrief.why, tips: dossier.steckbrief.tips, safety: dossier.steckbrief.safety, searches: own?.searches ?? [], ai: false } : own;
 
   return (
     <>
@@ -16,6 +21,7 @@ export function ProfileCard({ skill }: { skill: Skill }) {
           <div className="section-head-row">
             <h2 className="block-title">Steckbrief</h2>
             {p.ai && <span className="ai-tag">KI-erstellt · ungeprüft</span>}
+            {researched && <span className="ai-tag is-researched">Recherchiert · mit Quellen</span>}
             <button className="text-btn" onClick={() => setEditOpen(true)}>Bearbeiten</button>
           </div>
           <p className="profile-about">{p.about}</p>
@@ -55,6 +61,7 @@ export function ProfileCard({ skill }: { skill: Skill }) {
           <button className="btn btn-secondary btn-small" onClick={() => setCreateOpen(true)}>Steckbrief erstellen</button>
         </section>
       )}
+      {dossier && <DossierView d={dossier} id={`dos-${skill.id}`} />}
       <ProfileEditSheet open={editOpen} onClose={() => setEditOpen(false)} skill={skill} onRegenerate={() => { setEditOpen(false); setCreateOpen(true); }} />
       <ProfileCreateSheet open={createOpen} onClose={() => setCreateOpen(false)} skill={skill} />
     </>
