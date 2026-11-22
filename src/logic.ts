@@ -1,4 +1,4 @@
-import { db, uid, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ } from "./db";
+import { db, uid, withoutHooks, type LinkItem, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ } from "./db";
 import { defaultLists, withDefaults } from "./seed";
 
 // ---------------- Zeit & Datum ----------------
@@ -139,7 +139,7 @@ export async function saveSessionNote(r: StopResult, rating: 1 | 2 | 3 | null, t
 
 // ---------------- Skills ----------------
 
-export async function createSkill(input: { name: string; title?: string; kategorie: string; typ: Typ; status: Status; notes?: string }) {
+export async function createSkill(input: { name: string; title?: string; kategorie: string; typ: Typ; status: Status; notes?: string; links?: LinkItem[] }) {
   const now = Date.now();
   const skill = withDefaults({
     id: uid(),
@@ -149,6 +149,7 @@ export async function createSkill(input: { name: string; title?: string; kategor
     typ: input.typ,
     status: input.status,
     notes: input.notes ?? "",
+    links: input.links ?? [],
     createdAt: now,
     updatedAt: now,
   });
@@ -166,18 +167,21 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
   const sessions = await db.sessions.where("skillId").equals(id).toArray();
   const checks = await db.checks.where("skillId").equals(id).toArray();
   const records = await db.records.where("skillId").equals(id).toArray();
-  await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records], async () => {
+  const cards = await db.cards.where("skillId").equals(id).toArray();
+  await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records, db.cards], async () => {
     await db.sessions.where("skillId").equals(id).delete();
     await db.checks.where("skillId").equals(id).delete();
     await db.records.where("skillId").equals(id).delete();
+    await db.cards.where("skillId").equals(id).delete();
     await db.skills.delete(id);
   });
   return async () => {
-    await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records], async () => {
+    await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records, db.cards], async () => {
       if (skill) await db.skills.put(skill);
       await db.sessions.bulkPut(sessions);
       await db.checks.bulkPut(checks);
       await db.records.bulkPut(records);
+      await db.cards.bulkPut(cards);
     });
   };
 }
@@ -345,8 +349,34 @@ export async function exportBackup(): Promise<Blob> {
     todos: await db.todos.toArray(),
     lists: await db.lists.toArray(),
     records: await db.records.toArray(),
+    terms: await db.terms.toArray(),
+    wishes: await db.wishes.toArray(),
+    cards: await db.cards.toArray(),
+    tombs: await db.tombs.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+}
+
+/** Datei über das Teilen-Menü (iOS) bzw. als Download sichern. Gibt false zurück, wenn abgebrochen wurde. */
+export async function shareFile(blob: Blob, name: string, title: string): Promise<"shared" | "downloaded" | "cancelled"> {
+  try {
+    const file = new File([blob], name, { type: "application/json" });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title });
+      return "shared";
+    }
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return "cancelled";
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return "downloaded";
 }
 
 export function backupFileName(): string {
@@ -362,6 +392,10 @@ type Backup = {
   todos?: unknown[];
   lists?: unknown[];
   records?: unknown[];
+  terms?: unknown[];
+  wishes?: unknown[];
+  cards?: unknown[];
+  tombs?: unknown[];
   exportedAt: string;
 };
 
@@ -373,18 +407,27 @@ export async function readBackup(file: File): Promise<Backup> {
 
 /** Ersetzt alle Daten. Backups aus Version 1 werden um die neuen Felder ergänzt. */
 export async function restoreBackup(data: Backup) {
-  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records];
-  await db.transaction("rw", tables, async () => {
-    await Promise.all(tables.map((t) => t.clear()));
-    await db.skills.bulkAdd(data.skills.map((s) => withDefaults(s)));
-    await db.sessions.bulkAdd(data.sessions ?? []);
-    await db.inbox.bulkAdd((data.inbox ?? []) as never[]);
-    await db.checks.bulkAdd((data.checks ?? []) as never[]);
-    await db.apps.bulkAdd((data.apps ?? []) as never[]);
-    await db.todos.bulkAdd((data.todos ?? []) as never[]);
-    await db.lists.bulkAdd((data.lists?.length ? data.lists : defaultLists()) as never[]);
-    await db.records.bulkAdd((data.records ?? []) as never[]);
-  });
+  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.tombs];
+  // Fehlende Änderungszeit (alte Backups) aus dem Datum der Zeile schätzen
+  const fix = <T,>(rows: unknown[] | undefined): T[] =>
+    ((rows ?? []) as Record<string, number | undefined>[]).map((r) => (r.upd == null ? { ...r, upd: r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0 } : r)) as unknown as T[];
+  await withoutHooks(() =>
+    db.transaction("rw", tables, async () => {
+      await Promise.all(tables.map((t) => t.clear()));
+      await db.skills.bulkAdd(fix<Skill>(data.skills).map((x) => withDefaults(x)));
+      await db.sessions.bulkAdd(fix<Session>(data.sessions));
+      await db.inbox.bulkAdd(fix(data.inbox));
+      await db.checks.bulkAdd(fix(data.checks));
+      await db.apps.bulkAdd(fix(data.apps));
+      await db.todos.bulkAdd(fix(data.todos));
+      await db.lists.bulkAdd(data.lists?.length ? fix(data.lists) : defaultLists());
+      await db.records.bulkAdd(fix(data.records));
+      await db.terms.bulkAdd(fix(data.terms));
+      await db.wishes.bulkAdd(fix(data.wishes));
+      await db.cards.bulkAdd(fix(data.cards));
+      await db.tombs.bulkAdd((data.tombs ?? []) as never[]);
+    }),
+  );
 }
 
 // ---------------- Einstellungen (lokal) ----------------
@@ -580,4 +623,25 @@ export async function copyText(text: string): Promise<boolean> {
   }
   ta.remove();
   return ok;
+}
+
+// ---------------- Trainer ----------------
+
+/**
+ * Speichert einen Messwert. Hat der Skill schon einen Messwert mit anderer Einheit, wird nichts gespeichert.
+ * Hat er noch keinen, wird der Messwert des Trainers angelegt.
+ */
+export async function saveRecord(
+  skill: Skill,
+  rec: { value: number; label: string; unit: string; higher: boolean },
+): Promise<{ saved: boolean; isBest: boolean }> {
+  const fresh = await db.skills.get(skill.id);
+  if (!fresh) return { saved: false, isBest: false };
+  const metric = fresh.metric ?? { label: rec.label, unit: rec.unit, higher: rec.higher };
+  if (fresh.metric && fresh.metric.unit.trim() !== rec.unit) return { saved: false, isBest: false };
+  if (!fresh.metric) await updateSkill(skill.id, { metric });
+  const prev = bestOf(await db.records.where("skillId").equals(skill.id).toArray(), metric.higher);
+  await db.records.add({ id: uid(), skillId: skill.id, value: rec.value, at: Date.now() });
+  const isBest = prev !== null && (metric.higher ? rec.value > prev : rec.value < prev);
+  return { saved: true, isBest };
 }

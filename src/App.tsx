@@ -19,6 +19,9 @@ import { Habits } from "./screens/Habits";
 import { ProjectDetail, Projects } from "./screens/Projects";
 import { Stats } from "./screens/Stats";
 import { NewSkillSheet } from "./screens/SkillSheets";
+import { Terms } from "./screens/Terms";
+import { Wishes } from "./screens/Wishes";
+import { QuickCapture } from "./quick";
 
 interface SectionDef {
   id: Section;
@@ -34,6 +37,8 @@ const SECTIONS: SectionDef[] = [
   { id: "inbox", label: "Inbox", icon: "tray", root: () => <Inbox /> },
   { id: "gewohnheiten", label: "Gewohnheiten", icon: "repeat", root: () => <Habits /> },
   { id: "projekte", label: "Projekte", icon: "checklist", root: () => <Projects /> },
+  { id: "begriffe", label: "Begriffe", icon: "term", root: () => <Terms /> },
+  { id: "wunschliste", label: "Wunschliste", icon: "gift", root: () => <Wishes /> },
   { id: "statistik", label: "Statistik", icon: "chart", root: () => <Stats /> },
   { id: "mehr", label: "Mehr", icon: "more", root: () => <More /> },
 ];
@@ -232,6 +237,8 @@ function WideShell() {
           <div className="side-label">Bereiche</div>
           {sec("gewohnheiten")}
           {sec("projekte")}
+          {sec("begriffe")}
+          {sec("wunschliste")}
           {sec("statistik")}
           <div className="side-label">Kategorien</div>
           {item({ kind: "category", name: ALL }, <span className="side-caticon is-all"><Icon name="stack" size={16} /></span>, "Alle Einträge")}
@@ -292,6 +299,7 @@ export default function App() {
   return (
     <UIProvider>
       <TimerProvider>
+        <QuickCapture />
         <Shell />
       </TimerProvider>
     </UIProvider>

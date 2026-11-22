@@ -604,7 +604,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     setToastAction(action ?? null);
     setToastKey((k) => k + 1);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => { setToastText(null); setToastAction(null); }, action ? 5000 : 2600);
+    toastTimer.current = window.setTimeout(() => { setToastText(null); setToastAction(null); }, action ? 5000 : Math.max(2600, Math.min(7500, text.length * 60)));
   }, []);
 
   const undoable = useCallback(

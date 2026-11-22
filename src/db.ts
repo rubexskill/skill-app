@@ -30,6 +30,11 @@ export const PLACES: Place[] = ["ueberall", "zuhause", "draussen", "gym"];
 export const PLACE_LABEL: Record<Place, string> = { ueberall: "Überall", zuhause: "Zu Hause", draussen: "Draußen", gym: "Gym" };
 export const SEASON_LABEL: Record<Season, string> = { "": "Immer", sommer: "Sommer", winter: "Winter" };
 
+/** Änderungszeit (ms) – wird automatisch gesetzt und für den Abgleich zwischen Geräten genutzt. */
+export interface Synced {
+  upd?: number;
+}
+
 export interface LinkItem {
   id: string;
   url: string;
@@ -67,14 +72,14 @@ export interface Metric {
   higher: boolean;
 }
 
-export interface RecordEntry {
+export interface RecordEntry extends Synced {
   id: string;
   skillId: string;
   value: number;
   at: number;
 }
 
-export interface Skill {
+export interface Skill extends Synced {
   id: string;
   /** Originalname (z. B. aus der Skills.md) */
   name: string;
@@ -98,9 +103,40 @@ export interface Skill {
   milestones: Milestone[];
   profile: Profile | null;
   metric: Metric | null;
+  test: ExamTest | null;
 }
 
-export interface Session {
+export interface ExamQuestion {
+  id: string;
+  text: string;
+  options: string[];
+  /** Index der richtigen Antwort */
+  answer: number;
+  explanation: string;
+}
+
+export interface ExamTask {
+  id: string;
+  text: string;
+  criteria: string[];
+}
+
+export interface ExamAttempt {
+  at: number;
+  percent: number;
+  passed: boolean;
+}
+
+export interface ExamTest {
+  title: string;
+  passPercent: number;
+  questions: ExamQuestion[];
+  tasks: ExamTask[];
+  attempts: ExamAttempt[];
+  createdAt: number;
+}
+
+export interface Session extends Synced {
   id: string;
   skillId: string;
   start: number;
@@ -109,20 +145,20 @@ export interface Session {
   note?: string;
 }
 
-export interface InboxItem {
+export interface InboxItem extends Synced {
   id: string;
   text: string;
   createdAt: number;
 }
 
-export interface HabitCheck {
+export interface HabitCheck extends Synced {
   /** `${skillId}|${YYYY-MM-DD}` */
   id: string;
   skillId: string;
   date: string;
 }
 
-export interface AppIdea {
+export interface AppIdea extends Synced {
   id: string;
   name: string;
   note: string;
@@ -130,13 +166,13 @@ export interface AppIdea {
   order: number;
 }
 
-export interface TodoList {
+export interface TodoList extends Synced {
   id: string;
   name: string;
   order: number;
 }
 
-export interface Todo {
+export interface Todo extends Synced {
   id: string;
   listId: string;
   text: string;
@@ -145,6 +181,65 @@ export interface Todo {
   done: boolean;
   doneAt: number | null;
   createdAt: number;
+}
+
+export interface Term extends Synced {
+  id: string;
+  term: string;
+  /** Erklärung in eigenen Worten */
+  explanation: string;
+  understood: boolean;
+  understoodAt: number | null;
+  links: LinkItem[];
+  createdAt: number;
+}
+
+export interface Wish extends Synced {
+  id: string;
+  name: string;
+  url: string;
+  note: string;
+  bought: boolean;
+  boughtAt: number | null;
+  createdAt: number;
+}
+
+export interface Card extends Synced {
+  id: string;
+  skillId: string;
+  front: string;
+  back: string;
+  createdAt: number;
+  /** Fällig ab (ms) */
+  due: number;
+  /** Abstand in Tagen */
+  interval: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+}
+
+/** Löschvermerk: damit Gelöschtes beim Abgleich gelöscht bleibt */
+export interface Tomb {
+  /** `${tabelle}:${id}` */
+  id: string;
+  table: string;
+  itemId: string;
+  at: number;
+}
+
+export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards"] as const;
+export type SyncTable = (typeof SYNC_TABLES)[number];
+
+let hooksOff = false;
+/** Führt `fn` ohne automatische Änderungszeiten/Löschvermerke aus (für Abgleich und Backup-Import). */
+export async function withoutHooks<T>(fn: () => Promise<T>): Promise<T> {
+  hooksOff = true;
+  try {
+    return await fn();
+  } finally {
+    hooksOff = false;
+  }
 }
 
 export class SkillDB extends Dexie {
@@ -156,6 +251,10 @@ export class SkillDB extends Dexie {
   todos!: EntityTable<Todo, "id">;
   lists!: EntityTable<TodoList, "id">;
   records!: EntityTable<RecordEntry, "id">;
+  terms!: EntityTable<Term, "id">;
+  wishes!: EntityTable<Wish, "id">;
+  cards!: EntityTable<Card, "id">;
+  tombs!: EntityTable<Tomb, "id">;
 
   constructor() {
     // Ohne optimistischen Abfrage-Cache: Listen und Statistik lesen immer direkt aus der Datenbank.
@@ -189,6 +288,43 @@ export class SkillDB extends Dexie {
           Object.assign(s, withDefaults(s));
         });
       });
+
+    // Version 4: Begriffe, Wunschliste, Karteikarten, Abschlusstest; Änderungszeiten + Löschvermerke für den Abgleich.
+    this.version(4)
+      .stores({
+        terms: "id, createdAt",
+        wishes: "id, createdAt",
+        cards: "id, skillId, due",
+        tombs: "id",
+      })
+      .upgrade(async (tx) => {
+        await tx.table("skills").toCollection().modify((s: Partial<Skill>) => {
+          Object.assign(s, withDefaults(s));
+        });
+        for (const name of ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records"]) {
+          await tx.table(name).toCollection().modify((r: Record<string, number | undefined>) => {
+            if (r.upd == null) r.upd = r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0;
+          });
+        }
+      });
+
+    // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
+    for (const name of SYNC_TABLES) {
+      const t = this.table(name) as unknown as { hook: (n: string, fn: unknown) => void };
+      t.hook("creating", (_pk: unknown, obj: Record<string, unknown>) => {
+        if (!hooksOff) obj.upd = Date.now();
+      });
+      t.hook("updating", (mods: Record<string, unknown>) => {
+        if (!hooksOff && !("upd" in mods)) return { upd: Date.now() };
+        return undefined;
+      });
+      t.hook("deleting", function (this: { onsuccess?: () => void }, pk: unknown) {
+        if (hooksOff) return;
+        this.onsuccess = () => {
+          setTimeout(() => void db.tombs.put({ id: `${name}:${String(pk)}`, table: name, itemId: String(pk), at: Date.now() }), 0);
+        };
+      });
+    }
 
     // Nur bei einer ganz neuen Datenbank.
     this.on("populate", (tx) => {

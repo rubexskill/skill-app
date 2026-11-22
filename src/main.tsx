@@ -21,5 +21,11 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// Nur im Entwicklungsmodus: Datenbank für automatisierte Tests erreichbar machen.
-if (import.meta.env.DEV) void import("./db").then(({ db }) => ((window as unknown as { db: unknown }).db = db));
+// Nur im Entwicklungsmodus oder in Test-Builds (VITE_EXPOSE=1): Datenbank und Logik für automatisierte Tests erreichbar machen.
+if (import.meta.env.DEV || import.meta.env.VITE_EXPOSE === "1") {
+  void Promise.all([import("./db"), import("./logic"), import("./sync")]).then(([{ db }, logic, sync]) => {
+    const w = window as unknown as Record<string, unknown>;
+    w.db = db;
+    w.app = { logic, sync };
+  });
+}

@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-export type Section = "overview" | "heute" | "todos" | "inbox" | "gewohnheiten" | "projekte" | "statistik" | "mehr";
+export type Section = "overview" | "heute" | "todos" | "inbox" | "gewohnheiten" | "projekte" | "begriffe" | "wunschliste" | "statistik" | "mehr";
 
 export type Route =
   | { type: "skill"; id: string }

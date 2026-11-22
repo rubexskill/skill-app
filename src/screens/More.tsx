@@ -1,12 +1,15 @@
 import { useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "../db";
-import { backupFileName, exportBackup, minutesLabel, readBackup, restoreBackup } from "../logic";
+import { backupFileName, exportBackup, minutesLabel, readBackup, restoreBackup, shareFile } from "../logic";
 import { CheckCircle, Group, NavPage, Row, Segmented, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
 import { useTheme, type ThemeSetting } from "../theme";
+import { MarkdownImportSheet } from "./MdImport";
+import { SyncSheet } from "./Sync";
+import { ShortcutSheet } from "./Shortcut";
 
 const THEME_OPTS: { value: ThemeSetting; label: string }[] = [
   { value: "system", label: "System" },
@@ -19,6 +22,9 @@ export function More() {
   const { toast, actionSheet } = useUI();
   const [theme, setTheme] = useTheme();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [mdOpen, setMdOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
   const stats = useLiveQuery(async () => {
     const sessions = await db.sessions.toArray();
     return {
@@ -32,24 +38,10 @@ export function More() {
 
   const doExport = async () => {
     try {
-      const blob = await exportBackup();
-      const name = backupFileName();
-      const file = new File([blob], name, { type: "application/json" });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Skills-Backup" });
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-      toast("Backup gespeichert");
-    } catch (err) {
-      if ((err as Error)?.name !== "AbortError") toast("Export fehlgeschlagen");
+      const r = await shareFile(await exportBackup(), backupFileName(), "Skills-Backup");
+      if (r === "downloaded") toast("Backup gespeichert");
+    } catch {
+      toast("Export fehlgeschlagen");
     }
   };
 
@@ -78,10 +70,23 @@ export function More() {
             leading={<span className="icon-tile tile-ink"><Icon name="repeat" size={17} /></span>} />
           <Row title="Projekte" chevron onClick={() => nav.push({ type: "section", id: "projekte" })}
             leading={<span className="icon-tile tile-ink"><Icon name="checklist" size={17} /></span>} />
+          <Row title="Begriffe" chevron onClick={() => nav.push({ type: "section", id: "begriffe" })}
+            leading={<span className="icon-tile tile-ink"><Icon name="term" size={17} /></span>} />
+          <Row title="Wunschliste" chevron onClick={() => nav.push({ type: "section", id: "wunschliste" })}
+            leading={<span className="icon-tile tile-ink"><Icon name="gift" size={17} /></span>} />
           <Row title="Statistik" chevron onClick={() => nav.push({ type: "section", id: "statistik" })}
             leading={<span className="icon-tile tile-ink"><Icon name="chart" size={17} /></span>} />
         </Group>
       )}
+
+      <Group header="Importieren & Abgleichen">
+        <Row title="Markdown importieren" subtitle="Listen aus einer .md-Datei übernehmen" chevron onClick={() => setMdOpen(true)}
+          leading={<span className="icon-tile tile-accent"><Icon name="import" size={17} /></span>} />
+        <Row title="Abgleichen" subtitle="iPhone und iPad zusammenführen" chevron onClick={() => setSyncOpen(true)}
+          leading={<span className="icon-tile tile-accent"><Icon name="sync" size={17} /></span>} />
+        <Row title="Kurzbefehl" subtitle="Schnell erfassen vom Home-Bildschirm" chevron onClick={() => setShortcutOpen(true)}
+          leading={<span className="icon-tile tile-accent"><Icon name="bolt" size={17} /></span>} />
+      </Group>
 
       <Group header="Darstellung" footer="„System“ folgt der Einstellung von iPad oder iPhone.">
         <div className="row segmented-row">
@@ -94,10 +99,13 @@ export function More() {
           leading={<span className="icon-tile tile-ink"><Icon name="apps" size={17} /></span>} />
       </Group>
 
-      <Group header="Backup" footer="Deine Daten liegen nur auf diesem Gerät. Exportiere regelmäßig ein Backup, z. B. in die Dateien-App. Ein Import ersetzt alle Daten.">
+      <Group header="Backup" footer="Deine Daten liegen nur auf diesem Gerät. Exportiere regelmäßig ein Backup, z. B. in die Dateien-App. Ein Backup-Import ersetzt alle Daten – zum Zusammenführen nimm „Abgleichen“.">
         <Row title="Backup exportieren" onClick={() => void doExport()} chevron leading={<span className="icon-tile tile-gray"><Icon name="share" size={17} /></span>} />
         <Row title="Backup importieren" onClick={() => fileRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />
       </Group>
+      <MarkdownImportSheet open={mdOpen} onClose={() => setMdOpen(false)} />
+      <SyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} />
+      <ShortcutSheet open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
       <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void onFile(e)} />
 
       <Group header="Überblick">
@@ -107,7 +115,7 @@ export function More() {
         <Row title="Lernzeit gesamt" detail={stats ? minutesLabel(stats.minutes) : "–"} />
       </Group>
 
-      <div className="about">Skills · Version 3.0<br />Ohne Konto, ohne Server – alles bleibt bei dir.</div>
+      <div className="about">Skills · Version 4.0<br />Ohne Konto, ohne Server – alles bleibt bei dir.</div>
     </NavPage>
   );
 }

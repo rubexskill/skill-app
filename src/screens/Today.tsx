@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Skill, type Todo } from "../db";
 import { dayKey, dueLabel, isActiveHabit, isActiveSkill, longDate, minutesLabel, setTodoDone, startOfDay, toggleCheck } from "../logic";
@@ -9,6 +9,8 @@ import { useNav } from "../nav";
 import { PlayButton, Ring } from "./parts";
 import { useCompleting } from "./Todos";
 import { habitStreak, useHabitChecks, WeekDots } from "./Habits";
+import { TrainerSheet } from "../trainer/Trainer";
+import { endOfToday } from "../srs";
 
 export function Today() {
   const nav = useNav();
@@ -21,6 +23,15 @@ export function Today() {
   const todos = useLiveQuery(() => db.todos.toArray(), []);
   const lists = useLiveQuery(() => db.lists.toArray(), []);
   const { completing, complete } = useCompleting();
+  const dueCards = useLiveQuery(async () => {
+    const end = endOfToday();
+    const due = await db.cards.where("due").belowOrEqual(end).toArray();
+    const per = new Map<string, number>();
+    for (const c of due) per.set(c.skillId, (per.get(c.skillId) ?? 0) + 1);
+    const skillsAll = await db.skills.bulkGet([...per.keys()]);
+    return skillsAll.filter((s): s is Skill => !!s).map((s) => ({ skill: s, n: per.get(s.id) ?? 0 })).sort((a, b) => b.n - a.n);
+  }, [today]);
+  const [cardSkill, setCardSkill] = useState<Skill | null>(null);
 
   const practice = (skills ?? []).filter(isActiveSkill);
   const habits = (skills ?? []).filter(isActiveHabit);
@@ -43,13 +54,14 @@ export function Today() {
       return async () => void (await db.todos.put(t));
     });
 
+  const hasCards = (dueCards?.length ?? 0) > 0;
   const items = practice.length + habits.length + dueTodos.length;
   const done = practice.filter(isDone).length + habits.filter(isDone).length + dueTodos.filter((t) => t.done || completing.has(t.id)).length;
   const loaded = skills && todos;
 
   return (
     <NavPage title="Heute" eyebrow={longDate(new Date())}>
-      {loaded && items === 0 ? (
+      {loaded && items === 0 && !hasCards ? (
         <>
           <EmptyState icon="today" title="Heute ist nichts geplant" text="Schalte Skills oder Gewohnheiten auf „Aktiv“ oder gib To-dos ein Datum – dann erscheinen sie hier." />
           <Group><Row title="Gewohnheiten verwalten" tone="accent" chevron onClick={() => nav.push({ type: "section", id: "gewohnheiten" })} /></Group>
@@ -63,6 +75,15 @@ export function Today() {
               <div className="today-label">{done === items ? "Alles erledigt" : "erledigt"}</div>
             </div>
           </section>
+
+          {hasCards && (
+            <Group header="Karteikarten" footer="Fällige Karten wiederholst du kurz – danach sind sie für heute erledigt.">
+              {dueCards!.map(({ skill, n }) => (
+                <Row key={skill.id} className="cv" style={catVars(skill.kategorie)} title={skill.title} subtitle={`${n} ${n === 1 ? "Karte" : "Karten"} fällig`}
+                  leading={<span className="icon-tile tile-cat"><Icon name="cards" size={17} /></span>} chevron onClick={() => setCardSkill(skill)} />
+              ))}
+            </Group>
+          )}
 
           {practice.length > 0 && (
             <Group header="Üben">
@@ -110,6 +131,7 @@ export function Today() {
           )}
         </>
       ) : null}
+      {cardSkill && <TrainerSheet open={!!cardSkill} onClose={() => setCardSkill(null)} skill={cardSkill} initial="cards" />}
     </NavPage>
   );
 }

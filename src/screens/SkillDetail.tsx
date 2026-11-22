@@ -19,6 +19,9 @@ import { ProfileCard } from "./Profile";
 import { MilestoneList } from "./Milestones";
 import { Records } from "./Records";
 import { ProjectDetail } from "./Projects";
+import { CardsSheet } from "./Cards";
+import { ExamGroup } from "./Exam";
+import { TrainerSheet, builtInTrainer, useCardCounts } from "../trainer/Trainer";
 
 const SESSION_PREVIEW = 6;
 const EST_CHOICES = [30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3000, 6000, 12000];
@@ -60,6 +63,9 @@ function SkillPage({ id }: { id: string }) {
   const [metricOpen, setMetricOpen] = useState(false);
   const [sessionEdit, setSessionEdit] = useState<{ open: boolean; session: Session | null }>({ open: false, session: null });
   const [showAll, setShowAll] = useState(false);
+  const [trainOpen, setTrainOpen] = useState(false);
+  const [cardsOpen, setCardsOpen] = useState(false);
+  const counts = useCardCounts(id);
   const loaded = useRef<string | null>(null);
   const notesTimer = useRef(0);
   const days = useMemo(() => dailyMinutes(sessions ?? []), [sessions]);
@@ -204,13 +210,30 @@ function SkillPage({ id }: { id: string }) {
             <Icon name={running ? "pause" : "play"} size={28} />
           </button>
           <div className="hero-hint">{running ? `Seit ${timeLabel(skill.timerStart!)} · Pause speichert` : `Einheit ${skill.sessionMinutes} min`}</div>
+          {(builtInTrainer(skill) || counts.total > 0) && (
+            <button className="btn btn-secondary trainer-btn" onClick={() => setTrainOpen(true)}>
+              <Icon name="train" size={18} />
+              Trainieren
+              {counts.due > 0 && <span className="pill-count">{counts.due} fällig</span>}
+            </button>
+          )}
         </section>
 
         {isSkill && <ProfileCard skill={skill} />}
 
         {(isSkill || skill.milestones.length > 0) && <MilestoneList skill={skill} onAllDone={allDone} />}
 
+        {isSkill && <ExamGroup skill={skill} onPass={() => setStatus("kann")} />}
+
         <Records skill={skill} />
+
+        {isSkill && (
+          <Group header="Karteikarten">
+            <Row title="Karteikarten" subtitle={counts.total ? (counts.due ? `${counts.due} heute fällig` : "Heute nichts fällig") : "Eigene Karten zum Wiederholen anlegen"}
+              detail={counts.total ? String(counts.total) : undefined} chevron onClick={() => setCardsOpen(true)}
+              leading={<span className="icon-tile tile-soft"><Icon name="cards" size={17} /></span>} />
+          </Group>
+        )}
 
         <Group header="Notizen">
           <div className="row input-row">
@@ -287,6 +310,8 @@ function SkillPage({ id }: { id: string }) {
       <CategorySheet open={catOpen} onClose={() => setCatOpen(false)} value={skill.kategorie} onSelect={(k) => set({ kategorie: k })} />
       <LinkSheet open={linkOpen} onClose={() => setLinkOpen(false)} onSave={(url, ttl) => set({ links: [...skill.links, { id: uid(), url, title: ttl, addedAt: Date.now() }] })} />
       <MaterialSheet open={matOpen} onClose={() => setMatOpen(false)} title="Benötigtes Material" options={allMaterials} value={skill.material} onChange={(material) => set({ material })} />
+      <TrainerSheet open={trainOpen} onClose={() => setTrainOpen(false)} skill={skill} />
+      <CardsSheet open={cardsOpen} onClose={() => setCardsOpen(false)} skill={skill} />
       <MetricSheet open={metricOpen} onClose={() => setMetricOpen(false)} metric={skill.metric} onSave={(metric) => set({ metric })} />
       <SessionSheet open={sessionEdit.open} onClose={() => setSessionEdit({ open: false, session: sessionEdit.session })} skillId={id}
         session={sessionEdit.session} defaultMinutes={skill.sessionMinutes} />

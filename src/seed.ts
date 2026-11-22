@@ -72,6 +72,8 @@ export function withDefaults(s: Partial<Skill>): Skill {
     milestones: s.milestones ?? pf?.milestones ?? [],
     profile: s.profile !== undefined ? s.profile : pf?.profile ?? null,
     metric: s.metric !== undefined ? s.metric : pf?.metric ?? null,
+    test: s.test ?? null,
+    upd: s.upd,
   };
 }
 
