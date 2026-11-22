@@ -320,6 +320,12 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M12 3.8V8M12 16v4.2M3.8 12H8M16 12h4.2" />
     </g>
   ),
+  undo: (
+    <g {...S}>
+      <path d="M9 6.5L4.5 11 9 15.5" />
+      <path d="M5 11h9.5a4.5 4.5 0 0 1 0 9H11" />
+    </g>
+  ),
   copy: (
     <g {...S}>
       <rect x="8.5" y="8.5" width="11" height="11" rx="2.5" />

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type Todo } from "../db";
 import { addDays, addTodo, dayKey, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
+import { parseQuickTodo, todoBucket, type TodoBucket } from "../quickparse";
+import { catVars } from "../categories";
 import { CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 
@@ -29,18 +31,32 @@ export function useCompleting() {
 const LIST_KEY = "todos.list";
 const ALL_LISTS = "*";
 
+/** Listenfarbe: stabil aus der Listen-ID abgeleitet, aus der Kategorie-Palette der App. */
+const LIST_PALETTE = ["Kopf: Rechnen, Gedächtnis & Denken", "Natur, Erde & Himmel", "Körper & Sport", "Menschen, Sprache & Kommunikation", "Atmung, Sinne & Körperkontrolle", "Kreativ & Alltag", "Wissen & Verstehen", "Projekte & Besorgungen"];
+function listStyle(id: string, lists: { id: string }[] = []): React.CSSProperties {
+  const i = lists.findIndex((l) => l.id === id);
+  return catVars(LIST_PALETTE[(i < 0 ? 0 : i) % LIST_PALETTE.length]);
+}
+
+const BUCKETS: { key: TodoBucket; title: string }[] = [
+  { key: "overdue", title: "Überfällig" },
+  { key: "today", title: "Heute" },
+  { key: "week", title: "Diese Woche" },
+  { key: "later", title: "Später" },
+  { key: "none", title: "Ohne Datum" },
+];
+
 export function Todos() {
-  const { undoable } = useUI();
+  const { undoable, actionSheet } = useUI();
   const lists = useLiveQuery(() => db.lists.orderBy("order").toArray(), []);
   const todos = useLiveQuery(() => db.todos.toArray(), []);
   const [listId, setListIdState] = useState<string>(() => loadSetting(LIST_KEY, ALL_LISTS));
   const [text, setText] = useState("");
-  const [due, setDue] = useState<string | null>(null);
+  const [due, setDue] = useState<string | null | undefined>(undefined);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [listsOpen, setListsOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const { completing, complete } = useCompleting();
-  const dateRef = useRef<HTMLInputElement>(null);
 
   const setListId = (id: string) => {
     setListIdState(id);
@@ -52,27 +68,26 @@ export function Todos() {
   }, [lists, listId]);
 
   const today = dayKey(new Date());
-  const tomorrow = dayKey(addDays(new Date(), 1));
   const listName = (id: string) => lists?.find((l) => l.id === id)?.name ?? "";
 
   const visible = (todos ?? []).filter((t) => listId === ALL_LISTS || t.listId === listId);
   const groups = useMemo(() => {
     const open = visible.filter((t) => !t.done).sort((a, b) => (a.due ?? "9").localeCompare(b.due ?? "9") || a.createdAt - b.createdAt);
-    return {
-      overdue: open.filter((t) => t.due && t.due < today),
-      today: open.filter((t) => t.due === today),
-      later: open.filter((t) => t.due && t.due > today),
-      none: open.filter((t) => !t.due),
-      done: visible.filter((t) => t.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)),
-    };
+    const by: Record<TodoBucket, Todo[]> = { overdue: [], today: [], week: [], later: [], none: [] };
+    for (const t of open) by[todoBucket(t.due)].push(t);
+    return { by, done: visible.filter((t) => t.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)) };
   }, [visible, today]);
 
+  // Schnelleingabe: „Zahnarzt morgen #gesundheit“
+  const parsed = useMemo(() => (text.trim() ? parseQuickTodo(text, lists ?? []) : null), [text, lists]);
+  const effDue: string | null = due !== undefined ? due : parsed?.due ?? null;
+  const effList = parsed?.listId ?? (listId === ALL_LISTS ? lists?.[0]?.id ?? "list-allgemein" : listId);
+
   const add = async () => {
-    const tx = text.trim();
-    if (!tx) return;
-    const target = listId === ALL_LISTS ? lists?.[0]?.id ?? "list-allgemein" : listId;
-    await addTodo(tx, target, due);
+    if (!parsed || !parsed.text.trim()) return;
+    await addTodo(parsed.text, effList, effDue);
     setText("");
+    setDue(undefined);
   };
 
   const remove = (t: Todo) =>
@@ -81,51 +96,81 @@ export function Todos() {
       return async () => void (await db.todos.put(t));
     });
 
+  const reschedule = (t: Todo) => {
+    const mon = addDays(new Date(), ((8 - new Date().getDay()) % 7) || 7);
+    actionSheet({
+      title: t.text,
+      message: "Verschieben auf …",
+      choices: [
+        { label: "Heute", onSelect: () => void db.todos.update(t.id, { due: today }) },
+        { label: "Morgen", onSelect: () => void db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) }) },
+        { label: "Nächste Woche (Montag)", onSelect: () => void db.todos.update(t.id, { due: dayKey(mon) }) },
+        { label: "Ohne Datum", onSelect: () => void db.todos.update(t.id, { due: null }) },
+      ],
+    });
+  };
+
   const row = (t: Todo) => {
     const isOn = t.done || completing.has(t.id);
     const overdue = !t.done && !!t.due && t.due < today;
-    const parts = [
-      t.due && !t.done ? <span key="d" className={overdue ? "overdue" : ""}>{dueLabel(t.due)}</span> : null,
-      listId === ALL_LISTS ? <span key="l">{listName(t.listId)}</span> : null,
-    ].filter(Boolean);
+    const showDue = !!t.due && !t.done && t.due !== today;
     return (
-      <SwipeRow key={t.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }]}>
-        <Row className={completing.has(t.id) ? "is-completing" : ""} title={t.text} muted={isOn}
-          subtitle={parts.length ? parts.map((p, i) => <span key={i} className={i ? "sep" : ""}>{p}</span>) : undefined}
+      <SwipeRow key={t.id}
+        leading={t.done ? { label: "Offen", tone: "gray", onClick: () => void setTodoDone(t.id, false) } : { label: "Erledigt", tone: "ok", onClick: () => complete(t.id) }}
+        actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }, ...(t.done ? [] : [{ label: "Verschieben", tone: "gray" as const, onClick: () => reschedule(t) }])]}>
+        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={t.text} muted={isOn}
+          detail={(showDue || listId === ALL_LISTS) ? (
+            <span className="todo-meta">
+              {showDue && <span className={overdue ? "overdue" : ""}>{dueLabel(t.due!)}</span>}
+              {listId === ALL_LISTS && <span className="todo-list cv" style={listStyle(t.listId, lists)}><i />{listName(t.listId)}</span>}
+            </span>
+          ) : undefined}
           leading={<CheckCircle checked={isOn} label={t.text} onToggle={() => (t.done ? void setTodoDone(t.id, false) : complete(t.id))} />}
           onClick={() => setEditing(t)} />
       </SwipeRow>
     );
   };
 
-  const totalOpen = groups.overdue.length + groups.today.length + groups.later.length + groups.none.length;
+  const totalOpen = BUCKETS.reduce((n, b) => n + groups.by[b.key].length, 0);
+  const count = (id: string) => (todos ?? []).filter((t) => !t.done && (id === ALL_LISTS || t.listId === id)).length;
 
   return (
     <NavPage title="To-dos" trailing={<NavButton icon="todo" label="Listen bearbeiten" onClick={() => setListsOpen(true)} />}
       header={
         <div className="list-pills">
           {[{ id: ALL_LISTS, name: "Alle" }, ...(lists ?? [])].map((l) => (
-            <button key={l.id} className={`pill${listId === l.id ? " is-on" : ""}`} onClick={() => setListId(l.id)}>{l.name}</button>
+            <button key={l.id} className={`pill list-chip${l.id !== ALL_LISTS ? " cv" : ""}${listId === l.id ? " is-on" : ""}`}
+              style={l.id !== ALL_LISTS ? listStyle(l.id, lists) : undefined} onClick={() => setListId(l.id)}>
+              {l.id !== ALL_LISTS && <i className="chip-dot" />}
+              {l.name}
+              {count(l.id) > 0 && <span className="chip-count">{count(l.id)}</span>}
+            </button>
           ))}
           <button className="pill pill-add" onClick={() => setListsOpen(true)} aria-label="Liste hinzufügen"><Icon name="plus" size={15} /></button>
         </div>
       }>
-      <Group>
+      <Group footer={parsed && (parsed.due || parsed.listId) ? (
+        <span className="quick-hint">
+          {parsed.due ? dueLabel(parsed.due) : ""}{parsed.due && parsed.listId ? " · " : ""}{parsed.listId ? `Liste „${listName(parsed.listId)}“` : ""}
+        </span>
+      ) : text.trim() ? undefined : "Tipp: „Zahnarzt morgen #gesundheit“ setzt Datum und Liste."}>
         <div className="row input-row compose">
           <input value={text} placeholder={listId === ALL_LISTS ? "Neues To-do" : `Neu in „${listName(listId)}“`} enterKeyHint="done"
-            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
+            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && void add()} />
           {text.trim() && <button className="inline-btn" onClick={() => void add()}>Sichern</button>}
         </div>
-        <div className="row due-row">
-          {[{ v: null, l: "Ohne Datum" }, { v: today, l: "Heute" }, { v: tomorrow, l: "Morgen" }].map((o) => (
-            <button key={o.l} className={`mini-pill${due === o.v ? " is-on" : ""}`} onClick={() => setDue(o.v)}>{o.l}</button>
-          ))}
-          <label className={`mini-pill${due && due !== today && due !== tomorrow ? " is-on" : ""}`}>
-            <Icon name="calendar" size={14} />
-            {due && due !== today && due !== tomorrow ? dueLabel(due) : "Datum"}
-            <input ref={dateRef} type="date" className="date-overlay" value={due ?? ""} onChange={(e) => setDue(e.target.value || null)} />
-          </label>
-        </div>
+        {text.trim() && (
+          <div className="row due-row">
+            {[{ v: null, l: "Ohne Datum" }, { v: today, l: "Heute" }, { v: dayKey(addDays(new Date(), 1)), l: "Morgen" }].map((o) => (
+              <button key={o.l} className={`mini-pill${effDue === o.v ? " is-on" : ""}`} onClick={() => setDue(o.v)}>{o.l}</button>
+            ))}
+            <label className={`mini-pill${effDue && effDue !== today && effDue !== dayKey(addDays(new Date(), 1)) ? " is-on" : ""}`}>
+              <Icon name="calendar" size={14} />
+              {effDue && effDue !== today && effDue !== dayKey(addDays(new Date(), 1)) ? dueLabel(effDue) : "Datum"}
+              <input type="date" className="date-overlay" value={effDue ?? ""} onChange={(e) => setDue(e.target.value || null)} />
+            </label>
+          </div>
+        )}
       </Group>
 
       {todos && totalOpen === 0 && groups.done.length === 0 && (
@@ -133,12 +178,13 @@ export function Todos() {
       )}
       {todos && totalOpen === 0 && groups.done.length > 0 && <EmptyState icon="today" title="Alles erledigt" />}
 
-      {groups.overdue.length > 0 && <Group header={<span className="overdue">Überfällig</span>}>{groups.overdue.map(row)}</Group>}
-      {groups.today.length > 0 && <Group header="Heute">{groups.today.map(row)}</Group>}
-      {groups.later.length > 0 && <Group header="Demnächst">{groups.later.map(row)}</Group>}
-      {groups.none.length > 0 && <Group header="Ohne Datum">{groups.none.map(row)}</Group>}
+      {BUCKETS.map((b) => groups.by[b.key].length > 0 && (
+        <Group key={b.key} className="todo-group" header={
+          <span className={b.key === "overdue" ? "overdue" : ""}>{b.title}<span className="section-count">{groups.by[b.key].length}</span></span>
+        }>{groups.by[b.key].map(row)}</Group>
+      ))}
       {groups.done.length > 0 && (
-        <Group className={showDone ? "" : "is-collapsed"}
+        <Group className={`todo-group${showDone ? "" : " is-collapsed"}`}
           header={<button className="section-toggle" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone}>
             <span>Erledigt</span><span className="section-count">{groups.done.length}</span><Icon name="chevron-down" size={13} className="section-chevron" />
           </button>}>

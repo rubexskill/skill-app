@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type InboxItem } from "../db";
-import { addTodo, dayLabel, timeLabel } from "../logic";
-import { AutoTextarea, EmptyState, Group, NavPage, Row, SwipeRow, useUI } from "../components/ui";
+import { addTodo, dayLabel } from "../logic";
+import { AutoTextarea, EmptyState, Group, NavPage, SwipeRow, useUI } from "../components/ui";
 import { useNav } from "../nav";
 import { NewSkillSheet } from "./SkillSheets";
+import { InboxSort, loadSortState } from "./InboxSort";
+import { Icon } from "../components/Icon";
 
 export function Inbox() {
   const nav = useNav();
@@ -12,6 +14,8 @@ export function Inbox() {
   const items = useLiveQuery(() => db.inbox.orderBy("createdAt").reverse().toArray(), []);
   const [text, setText] = useState("");
   const [asSkill, setAsSkill] = useState<InboxItem | null>(null);
+  const [sorting, setSorting] = useState(false);
+  const [, bump] = useState(0);
 
   const add = async () => {
     const t = text.trim();
@@ -59,21 +63,40 @@ export function Inbox() {
         </div>
       </Group>
 
+      {items && items.length > 0 && (() => {
+        const st = loadSortState();
+        const open = items.filter((i) => !st?.deferred.includes(i.id)).length;
+        const resume = !!st && st.done > 0 && open > 0;
+        return (
+          <button className="sort-cta" onClick={() => setSorting(true)}>
+            <Icon name="stack" size={20} />
+            <span>{resume ? `Weitermachen – ${open} übrig` : `Sortieren (${items.length})`}</span>
+            <Icon name="chevron-right" size={15} className="sort-cta-chev" />
+          </button>
+        );
+      })()}
+
       {items && items.length === 0 && <EmptyState icon="tray" title="Inbox ist leer" text="Neue Ideen landen hier, bis du Zeit für sie hast." />}
 
       {items && items.length > 0 && (
-        <Group header={`${items.length} ${items.length === 1 ? "Idee" : "Ideen"}`} footer="Tippen zum Einsortieren als Skill oder To-do.">
+        <Group className="inbox-group" header={`${items.length} ${items.length === 1 ? "Idee" : "Ideen"}`} footer="Tippen zum Einsortieren, wischen für Schnellaktionen.">
           {items.map((item) => (
             <SwipeRow key={item.id} actions={[
               { label: "Löschen", tone: "danger", onClick: () => remove(item) },
               { label: "To-do", tone: "gray", onClick: () => void asTodo(item) },
               { label: "Skill", tone: "accent", onClick: () => setAsSkill(item) },
             ]}>
-              <Row title={item.text} subtitle={`${dayLabel(item.createdAt)}, ${timeLabel(item.createdAt)}`} chevron onClick={() => sort(item)} />
+              <div className="row inbox-row is-tappable" role="button" tabIndex={0} onClick={() => sort(item)}
+                onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) sort(item); }}>
+                <div className="inbox-text">{item.text}</div>
+                <div className="inbox-date">{dayLabel(item.createdAt)}</div>
+              </div>
             </SwipeRow>
           ))}
         </Group>
       )}
+
+      <InboxSort open={sorting} onClose={() => { setSorting(false); bump((n) => n + 1); }} />
 
       <NewSkillSheet open={!!asSkill} onClose={() => setAsSkill(null)} initialName={asSkill?.text ?? ""}
         onCreated={() => { if (asSkill) void db.inbox.delete(asSkill.id); }}

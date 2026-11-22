@@ -183,19 +183,23 @@ export function Row({ title, subtitle, detail, leading, trailing, chevron, onCli
 
 export interface SwipeAction {
   label: string;
-  tone: "danger" | "accent" | "gray";
+  tone: "danger" | "accent" | "gray" | "ok";
   onClick: () => void;
 }
 
 const ACTION_W = 82;
 
-export function SwipeRow({ actions, children }: { actions: SwipeAction[]; children: ReactNode }) {
+/** `leading`: Aktion beim Wischen nach rechts (z. B. „Erledigt“); weit durchwischen löst sie aus. */
+export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[]; leading?: SwipeAction; children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef(0);
   const [offset, setOffset] = useState(0);
   const st = useRef({ x: 0, y: 0, base: 0, lock: "" as "" | "x" | "y", id: -1, moved: false });
   const max = actions.length * ACTION_W;
+  const lead = leading ? ACTION_W + 14 : 0;
+  const leadingRef = useRef(leading);
+  leadingRef.current = leading;
   const myId = useRef(Math.random());
 
   useEffect(() => {
@@ -213,6 +217,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     el.style.transform = `translateX(${x}px)`;
     // Aktionen nur zeigen, solange die Zeile verschoben ist (sonst scheint der Rand durch).
     window.clearTimeout(hideTimer.current);
+    if (x !== 0 && wrapRef.current) wrapRef.current.dataset.side = x > 0 ? "lead" : "trail";
     if (x !== 0) wrapRef.current?.classList.add("is-active");
     else hideTimer.current = window.setTimeout(() => wrapRef.current?.classList.remove("is-active"), 420);
   };
@@ -243,7 +248,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     s.moved = true;
     lastX.current = x;
     let pos = s.base + dx;
-    if (pos > 0) pos = pos / 4;
+    if (pos > 0) pos = leadingRef.current ? pos : pos / 4;
     if (pos < -max) pos = -max + (pos + max) / 3;
     apply(pos, false);
     return true;
@@ -257,13 +262,18 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     const width = contentRef.current?.offsetWidth ?? 320;
     const el = contentRef.current;
     if (el) el.style.transition = "";
+    if (leadingRef.current && pos > width * 0.42) {
+      apply(width, true);
+      window.setTimeout(() => { leadingRef.current?.onClick(); apply(0, false); setOffset(0); }, 220);
+      return;
+    }
     if (pos < -width * 0.55) {
       // Durchwischen = erste Aktion (wie in iOS)
       apply(-width, true);
       window.setTimeout(() => { actionsRef.current[0].onClick(); apply(0, false); setOffset(0); }, 220);
       return;
     }
-    const next = pos < -max / 2 ? -max : 0;
+    const next = pos < -max / 2 ? -max : leadingRef.current && pos > lead / 2 ? lead : 0;
     apply(next, true);
     setOffset(next);
   };
@@ -315,6 +325,11 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
 
   return (
     <div ref={wrapRef} className="swipe">
+      {leading && (
+        <div className={`swipe-lead tone-${leading.tone}`}>
+          <button className={`swipe-action tone-${leading.tone}`} style={{ width: lead }} onClick={() => { apply(0, true); setOffset(0); leading.onClick(); }}>{leading.label}</button>
+        </div>
+      )}
       <div className="swipe-actions" style={{ width: max }}>
         {actions.map((a) => (
           <button key={a.label} className={`swipe-action tone-${a.tone}`} onClick={() => { apply(0, true); setOffset(0); a.onClick(); }}>
