@@ -1430,3 +1430,5 @@ html.has-sorter, html.has-sorter body { overscroll-behavior: none; }
 .tidy-title svg { color: var(--label-3); flex: none; }
 .tidy-lines { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; line-height: 18px; }
 .tidy-warn { color: var(--st-rausfinden); }
+.tidy-row.is-destructive { background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated)); }
+.tidy-del { color: var(--danger); }

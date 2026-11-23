@@ -1,5 +1,5 @@
 import { db, STATUSES, type Place, type Skill, type Status, type Term, type Todo, type TodoList, type Typ, type Wish } from "./db";
-import { normalize } from "./logic";
+import { deleteSkill, normalize, similarity } from "./logic";
 
 /** „Mit Claude aufräumen“: Prompt bauen, Antwort lesen, Vorschau erzeugen, übernehmen. Alles lokal, ohne API. */
 
@@ -46,17 +46,37 @@ function assignSids(items: Omit<TidyItem, "sid">[]): TidyItem[] {
   });
 }
 
-export async function collectUnsorted(scope: TidyScope = {}): Promise<TidyItem[]> {
+/** Alle Einträge (Skills, To-dos, Begriffe, Wünsche) mit kurzen Kennungen, die innerhalb der Liste eindeutig sind. */
+export async function collectAll(): Promise<TidyItem[]> {
   const [skills, todos, terms, wishes] = await Promise.all([db.skills.toArray(), db.todos.toArray(), db.terms.toArray(), db.wishes.toArray()]);
   const raw: Omit<TidyItem, "sid">[] = [
-    ...skills.filter((s) => s.unsorted).map((s) => ({ kind: skillKind(s), id: s.id, text: s.name, createdAt: s.createdAt, skill: s })),
-    ...todos.filter((t) => t.unsorted).map((t) => ({ kind: "todo" as const, id: t.id, text: t.text, createdAt: t.createdAt, todo: t })),
-    ...terms.filter((t) => t.unsorted).map((t) => ({ kind: "begriff" as const, id: t.id, text: t.term, createdAt: t.createdAt, term: t })),
-    ...wishes.filter((w) => w.unsorted).map((w) => ({ kind: "wunsch" as const, id: w.id, text: w.name, createdAt: w.createdAt, wish: w })),
-  ]
-    .filter((i) => (!scope.kinds || scope.kinds.includes(i.kind)) && (!scope.ids || scope.ids.includes(i.id)))
-    .sort((a, b) => a.createdAt - b.createdAt);
+    ...skills.map((s) => ({ kind: skillKind(s), id: s.id, text: s.name, createdAt: s.createdAt, skill: s })),
+    ...todos.map((t) => ({ kind: "todo" as const, id: t.id, text: t.text, createdAt: t.createdAt, todo: t })),
+    ...terms.map((t) => ({ kind: "begriff" as const, id: t.id, text: t.term, createdAt: t.createdAt, term: t })),
+    ...wishes.map((w) => ({ kind: "wunsch" as const, id: w.id, text: w.name, createdAt: w.createdAt, wish: w })),
+  ].sort((a, b) => a.createdAt - b.createdAt);
   return assignSids(raw);
+}
+
+const isUnsorted = (i: TidyItem) => !!(i.skill?.unsorted || i.todo?.unsorted || i.term?.unsorted || i.wish?.unsorted);
+
+export async function collectUnsorted(scope: TidyScope = {}, all?: TidyItem[]): Promise<TidyItem[]> {
+  const pool = all ?? (await collectAll());
+  return pool.filter((i) => isUnsorted(i) && (!scope.kinds || scope.kinds.includes(i.kind)) && (!scope.ids || scope.ids.includes(i.id)));
+}
+
+/** Gleiche Tabelle (Skills/To-dos/Begriffe/Wünsche) = Duplikat und Zusammenführen sind erlaubt. */
+export const tableOf = (i: TidyItem): TidyChange["table"] => (i.skill ? "skills" : i.todo ? "todos" : i.term ? "terms" : "wishes");
+
+/** Bis zu drei ähnliche, schon vorhandene Einträge (für den Prompt, damit Claude Duplikate erkennen kann). */
+export function similarOf(item: TidyItem, pool: TidyItem[], limit = 3): TidyItem[] {
+  return pool
+    .filter((p) => p.id !== item.id && tableOf(p) === tableOf(item))
+    .map((p) => ({ p, score: Math.max(similarity(item.text, p.text), item.skill && p.skill ? similarity(item.text, p.skill.title) : 0) }))
+    .filter((x) => x.score >= 60)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.p);
 }
 
 export interface TidyContext {
@@ -81,7 +101,7 @@ export function chunk<T>(a: T[], n: number): T[][] {
 
 const KIND_NAME: Record<TidyKind, string> = { skill: "skill", gewohnheit: "gewohnheit", projekt: "projekt", todo: "todo", begriff: "begriff", wunsch: "wunsch" };
 
-function promptItem(i: TidyItem): Record<string, unknown> {
+function promptItem(i: TidyItem, pool: TidyItem[] = []): Record<string, unknown> {
   const o: Record<string, unknown> = { id: i.sid, art: KIND_NAME[i.kind], text: i.text };
   if (i.skill) {
     if (i.skill.kategorie && i.skill.kategorie !== "Ohne Kategorie") o.aktuelle_kategorie = i.skill.kategorie;
@@ -90,10 +110,12 @@ function promptItem(i: TidyItem): Record<string, unknown> {
   if (i.todo?.due) o.aktuelles_datum = i.todo.due;
   if (i.term?.explanation.trim()) o.aktuelle_erklaerung = i.term.explanation.trim().slice(0, 300);
   if (i.wish?.note.trim()) o.notiz = i.wish.note.trim().slice(0, 300);
+  const sim = similarOf(i, pool);
+  if (sim.length) o.aehnliche_eintraege = sim.map((p) => ({ id: p.sid, text: p.text, ...(isUnsorted(p) ? { unaufgeraeumt: true } : {}) }));
   return o;
 }
 
-export function buildPrompt(items: TidyItem[], ctx: TidyContext, part: number, parts: number): string {
+export function buildPrompt(items: TidyItem[], ctx: TidyContext, part: number, parts: number, pool: TidyItem[] = []): string {
   const hasSkill = items.some((i) => i.skill);
   const hasTodo = items.some((i) => i.todo);
   const hasTerm = items.some((i) => i.term);
@@ -115,6 +137,7 @@ export function buildPrompt(items: TidyItem[], ctx: TidyContext, part: number, p
     "- status für Skills: idee = später, lerne = aktiv, rausfinden = klären (nur wenn wirklich unklar), kann = schon geschafft. Im Zweifel \"idee\".",
     "- bewegung: 0 = keine, 1 = wenig, 2 = viel. stunden_bis_koennen: realistische Stunden bis zum soliden Können für Anfänger. minuten_pro_einheit: sinnvolle Übungsdauer.",
     "- Gib bei jedem Eintrag dieselbe id zurück wie unten. Lass keinen Eintrag aus.",
+    "- Aufräumen heißt auch aussortieren: Ist ein Eintrag Unsinn, ein Tippfehler-Rest, leer oder nicht sinnvoll, gib stattdessen {\"id\":\"…\",\"aktion\":\"loeschen\"} zurück. Ist er ein Duplikat eines anderen Eintrags (siehe aehnliche_eintraege oder ein anderer Eintrag in dieser Liste), gib {\"id\":\"…\",\"aktion\":\"duplikat_von\",\"duplikat_von\":\"<id des anderen Eintrags>\"} zurück. Verwende nur ids aus dieser Nachricht. Lösche und führe nur zusammen, wenn du dir sicher bist; im Zweifel behalte den Eintrag und bereinige ihn normal. Die Vorschau zeigt jede Löschung zur Bestätigung.",
     `- Heute ist ${ctx.today}. Datum bei To-dos nur setzen, wenn der Text eines nennt („morgen“, „Freitag“ …), sonst null.`,
     "",
     "Format der Antwort:",
@@ -129,14 +152,14 @@ export function buildPrompt(items: TidyItem[], ctx: TidyContext, part: number, p
     "",
     "Einträge:",
     "```json",
-    JSON.stringify(items.map(promptItem), null, 1),
+    JSON.stringify(items.map((i) => promptItem(i, pool)), null, 1),
     "```",
   ].join("\n");
 }
 
-export function buildPrompts(items: TidyItem[], ctx: TidyContext, size = PACKAGE_SIZE): { text: string; count: number }[] {
+export function buildPrompts(items: TidyItem[], ctx: TidyContext, size = PACKAGE_SIZE, pool: TidyItem[] = []): { text: string; count: number }[] {
   const parts = chunk(items, size);
-  return parts.map((p, i) => ({ text: buildPrompt(p, ctx, i + 1, parts.length), count: p.length }));
+  return parts.map((p, i) => ({ text: buildPrompt(p, ctx, i + 1, parts.length, pool), count: p.length }));
 }
 
 // ---------------- Antwort lesen ----------------
@@ -160,6 +183,9 @@ export interface TidyEntry {
   datum?: string | null;
   begriff?: string;
   erklaerung?: string;
+  /** "loeschen" oder "duplikat_von" (mit Feld duplikat_von); auch als Objekt {duplikat_von: id} lesbar */
+  aktion?: string | { duplikat_von?: string; loeschen?: boolean };
+  duplikat_von?: string;
 }
 
 /** Findet alle JSON-Blöcke (```json … ``` oder rohes JSON) und gibt die Einträge zurück. */
@@ -186,7 +212,17 @@ export function parseTidyResponse(text: string): { entries: TidyEntry[]; errors:
     }
     const list = Array.isArray(data) ? data : Array.isArray((data as { eintraege?: unknown }).eintraege) ? (data as { eintraege: unknown[] }).eintraege : null;
     if (!list) { errors.push("Feld „eintraege“ fehlt."); continue; }
-    for (const e of list) if (e && typeof e === "object" && typeof (e as TidyEntry).id === "string") entries.push(e as TidyEntry);
+    for (const e of list) {
+      if (!e || typeof e !== "object" || typeof (e as TidyEntry).id !== "string") continue;
+      const en = e as TidyEntry;
+      if (en.aktion && typeof en.aktion === "object") {
+        if (en.aktion.duplikat_von) { en.duplikat_von = String(en.aktion.duplikat_von); en.aktion = "duplikat_von"; }
+        else if (en.aktion.loeschen) en.aktion = "loeschen";
+        else en.aktion = undefined;
+      }
+      if (typeof en.duplikat_von === "string" && en.duplikat_von && !en.aktion) en.aktion = "duplikat_von";
+      entries.push(en);
+    }
   }
   return { entries, errors };
 }
@@ -202,6 +238,11 @@ export interface TidyChange {
   lines: string[];
   warnings: string[];
   unclear: boolean;
+  /** update = bereinigen, delete = löschen, merge = als Duplikat zusammenführen */
+  action: "update" | "delete" | "merge";
+  target?: TidyItem;
+  /** Vorauswahl in der Vorschau */
+  preselect: boolean;
 }
 
 const PLACES: Record<string, Place> = { ueberall: "ueberall", überall: "ueberall", zuhause: "zuhause", "zu hause": "zuhause", draussen: "draussen", draußen: "draussen", gym: "gym" };
@@ -220,7 +261,13 @@ export function matchEntry(items: TidyItem[], id: string): TidyItem | null {
   return items.find((i) => i.sid === k) ?? items.find((i) => i.sid.toLowerCase() === k.toLowerCase()) ?? items.find((i) => i.id === k) ?? null;
 }
 
-export function buildChanges(items: TidyItem[], entries: TidyEntry[], ctx: TidyContext, lists: TodoList[]): { changes: TidyChange[]; unmatched: TidyEntry[] } {
+/** Skills, an denen Sessions, Häkchen, Rekorde oder Karten hängen (Löschen/Zusammenführen dann nur mit Warnung). */
+export async function skillsWithHistory(): Promise<Set<string>> {
+  const [a, b, c, d] = await Promise.all([db.sessions.toArray(), db.checks.toArray(), db.records.toArray(), db.cards.toArray()]);
+  return new Set([...a, ...b, ...c, ...d].map((x) => x.skillId));
+}
+
+export function buildChanges(items: TidyItem[], entries: TidyEntry[], ctx: TidyContext, lists: TodoList[], pool: TidyItem[] = items, withHistory: Set<string> = new Set()): { changes: TidyChange[]; unmatched: TidyEntry[] } {
   const changes: TidyChange[] = [];
   const unmatched: TidyEntry[] = [];
   const seen = new Set<string>();
@@ -229,6 +276,27 @@ export function buildChanges(items: TidyItem[], entries: TidyEntry[], ctx: TidyC
     const item = matchEntry(items, entry.id);
     if (!item || seen.has(item.id)) { if (!item) unmatched.push(entry); continue; }
     seen.add(item.id);
+    if (entry.aktion === "loeschen" || entry.aktion === "duplikat_von") {
+      const table0 = tableOf(item);
+      const warnings0: string[] = [];
+      let action: TidyChange["action"] = entry.aktion === "loeschen" ? "delete" : "merge";
+      let target: TidyItem | undefined;
+      let preselect = true;
+      if (action === "merge") {
+        target = matchEntry(pool, String(entry.duplikat_von ?? "")) ?? undefined;
+        if (!target) { warnings0.push("Das genannte Original wurde nicht gefunden – nichts zusammengeführt."); }
+        else if (target.id === item.id) { warnings0.push("Ein Eintrag kann nicht Duplikat von sich selbst sein."); target = undefined; }
+        else if (tableOf(target) !== table0) { warnings0.push("Das Original ist eine andere Art von Eintrag – nichts zusammengeführt."); target = undefined; }
+        if (!target) { action = "update"; preselect = false; }
+      }
+      if (item.skill && withHistory.has(item.id) && action !== "update") { warnings0.push("Achtung: Dieser Skill hat Sessions, Häkchen, Rekorde oder Karten."); preselect = false; }
+      const lines0 =
+        action === "delete" ? [`Löschen (Vorschlag von Claude)`]
+        : action === "merge" ? [`Duplikat von „${target!.text}“ – wird zusammengeführt, der Text bleibt dort in den Notizen`]
+        : ["Keine Änderung"];
+      changes.push({ item, entry, table: table0, patch: action === "update" ? {} : { unsorted: false }, lines: lines0, warnings: warnings0, unclear: false, action, target, preselect });
+      continue;
+    }
     const warnings: string[] = [];
     const lines: string[] = [];
     const patch: Record<string, unknown> = { unsorted: false };
@@ -312,24 +380,50 @@ export function buildChanges(items: TidyItem[], entries: TidyEntry[], ctx: TidyC
       diff("Name", w.name, name);
     }
     if (!lines.length) lines.push("Nur als aufgeräumt markieren");
-    changes.push({ item, entry, table, patch, lines, warnings, unclear });
+    changes.push({ item, entry, table, patch, lines, warnings, unclear, action: "update", preselect: true });
+  }
+  // Ziele, die selbst gelöscht oder zusammengeführt werden, sind keine gültigen Originale
+  const removed = new Set(changes.filter((c) => c.action === "delete" || c.action === "merge").map((c) => c.item.id));
+  for (const c of changes) {
+    if (c.action === "merge" && c.target && removed.has(c.target.id)) {
+      c.warnings.push("Das Original wird in derselben Antwort selbst entfernt – nichts zusammengeführt.");
+      c.action = "update"; c.patch = {}; c.lines = ["Keine Änderung"]; c.preselect = false; c.target = undefined;
+    }
   }
   return { changes, unmatched };
 }
 
-/** Wendet die gewählten Änderungen an; gibt eine Funktion zum Rückgängigmachen zurück. */
+/** Wendet die gewählten Änderungen an (bereinigen, löschen, zusammenführen); gibt eine Funktion zum Rückgängigmachen zurück. */
 export async function applyChanges(changes: TidyChange[]): Promise<() => Promise<void>> {
-  const before: { table: TidyChange["table"]; row: unknown }[] = changes.map((c) => ({
-    table: c.table,
-    row: c.item.skill ?? c.item.todo ?? c.item.term ?? c.item.wish,
-  }));
-  await db.transaction("rw", db.skills, db.todos, db.terms, db.wishes, async () => {
-    for (const c of changes) await db.table(c.table).update(c.item.id, c.patch);
-  });
+  const rowOf = (i: TidyItem) => i.skill ?? i.todo ?? i.term ?? i.wish;
+  const before = changes.map((c) => ({ table: c.table, row: rowOf(c.item) }));
+  const targetsBefore = changes.filter((c) => c.action === "merge" && c.target).map((c) => ({ table: c.table, row: rowOf(c.target!) }));
+  const restores: (() => Promise<void>)[] = [];
+  // Erst bereinigen, dann zusammenführen/löschen: Ein Original kann in derselben Antwort selbst bereinigt werden.
+  for (const c of changes) {
+    if (c.action === "update" && Object.keys(c.patch).length) await db.table(c.table).update(c.item.id, c.patch);
+  }
+  for (const c of changes) {
+    if (c.action === "merge" && c.target) {
+      // Text des Duplikats bleibt beim Original in den Notizen; dann Duplikat entfernen
+      const t = c.target;
+      const line = `Zusammengeführt: ${c.item.text}`;
+      const fresh = (await db.table(c.table).get(t.id)) as { notes?: string; note?: string } | undefined;
+      const old = (t.skill ? fresh?.notes : fresh?.note) ?? "";
+      const note = old.includes(line) ? old : old.trim() ? `${old.trim()}\n\n${line}` : line;
+      await db.table(c.table).update(t.id, t.skill ? { notes: note } : { note });
+    }
+    if (c.action === "merge" || c.action === "delete") {
+      if (c.action === "merge" && !c.target) continue;
+      if (c.item.skill) restores.push(await deleteSkill(c.item.id));
+      else await db.table(c.table).delete(c.item.id);
+    }
+  }
   return async () => {
     await db.transaction("rw", db.skills, db.todos, db.terms, db.wishes, async () => {
-      for (const b of before) await db.table(b.table).put(b.row);
+      for (const b of [...targetsBefore, ...before]) if (b.row) await db.table(b.table).put(b.row);
     });
+    for (const r of restores) await r();
   };
 }
 

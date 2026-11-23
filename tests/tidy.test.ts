@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db, uid } from "../src/db";
 import { addTodo, createSkill } from "../src/logic";
 import { BACKFILL_FROM, backfillUnsorted, skillNeedsTidy } from "../src/backfill";
-import { applyChanges, buildChanges, buildPrompts, collectUnsorted, parseTidyResponse, tidyContext } from "../src/tidy";
+import { applyChanges, buildChanges, buildPrompts, collectAll, collectUnsorted, parseTidyResponse, skillsWithHistory, tidyContext } from "../src/tidy";
 
 beforeEach(async () => {
   for (const t of db.tables) await t.clear();
@@ -79,6 +79,83 @@ describe("Aufräumen", () => {
     expect(parseTidyResponse(`[{"id":"s-1","titel":"a"}]`).entries).toHaveLength(1);
     expect(parseTidyResponse("Entschuldigung, das kann ich nicht.").errors.length).toBeGreaterThan(0);
     expect(parseTidyResponse("```json\n{kaputt\n```").errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Aufräumen: Löschen und Duplikate", () => {
+  it("Prompt erklärt Aktionen und nennt ähnliche vorhandene Einträge", async () => {
+    await createSkill({ name: "Handstand halten", kategorie: "Körper & Sport", typ: "skill", status: "idee" });
+    await createSkill({ name: "handstand halten lernen", kategorie: "Ohne Kategorie", typ: "skill", status: "idee", unsorted: true });
+    const all = await collectAll();
+    const items = await collectUnsorted({}, all);
+    const p = buildPrompts(items, await tidyContext(), 30, all)[0].text;
+    expect(p).toContain("loeschen");
+    expect(p).toContain("duplikat_von");
+    expect(p).toContain("aehnliche_eintraege");
+    expect(p).toContain("Handstand halten");
+  });
+
+  it("liest beide Schreibweisen der Aktion", () => {
+    const a = parseTidyResponse('[{"id":"s-1","aktion":"loeschen"},{"id":"s-2","aktion":"duplikat_von","duplikat_von":"s-9"},{"id":"s-3","aktion":{"duplikat_von":"s-9"}}]').entries;
+    expect(a.map((e) => [e.aktion, e.duplikat_von])).toEqual([["loeschen", undefined], ["duplikat_von", "s-9"], ["duplikat_von", "s-9"]]);
+  });
+
+  it("löscht und führt Duplikate zusammen – nach Auswahl, mit Rückgängig", async () => {
+    const orig = await createSkill({ name: "Handstand halten", kategorie: "Körper & Sport", typ: "skill", status: "idee" });
+    const dup = await createSkill({ name: "handstand halten lernen", kategorie: "Ohne Kategorie", typ: "skill", status: "idee", unsorted: true });
+    const junk = await createSkill({ name: "asdf", kategorie: "Ohne Kategorie", typ: "skill", status: "idee", unsorted: true });
+    const t = await addTodo("Brot", "list-allgemein", null, true);
+    const t2 = await addTodo("brot kaufen", "list-allgemein", null, true);
+    const all = await collectAll();
+    const items = await collectUnsorted({}, all);
+    const sid = (id: string) => all.find((i) => i.id === id)!.sid;
+    const entries = [
+      { id: sid(dup.id), aktion: "duplikat_von", duplikat_von: sid(orig.id) },
+      { id: sid(junk.id), aktion: "loeschen" },
+      { id: sid(t2.id), aktion: "duplikat_von", duplikat_von: sid(t.id) },
+      { id: sid(t.id), titel: "Brot kaufen", liste: "Allgemein" },
+    ];
+    const { changes } = buildChanges(items, entries, await tidyContext(), await db.lists.toArray(), all, await skillsWithHistory());
+    expect(changes.map((c) => c.action).sort()).toEqual(["delete", "merge", "merge", "update"]);
+    expect(changes.every((c) => c.preselect)).toBe(true);
+    const undo = await applyChanges(changes);
+    expect(await db.skills.get(dup.id)).toBeUndefined();
+    expect(await db.skills.get(junk.id)).toBeUndefined();
+    expect((await db.skills.get(orig.id))!.notes).toContain("Zusammengeführt: handstand halten lernen");
+    expect(await db.todos.get(t2.id)).toBeUndefined();
+    expect((await db.todos.get(t.id))!.note).toContain("Zusammengeführt: brot kaufen");
+    await undo();
+    expect(await db.skills.get(dup.id)).toBeTruthy();
+    expect(await db.skills.get(junk.id)).toBeTruthy();
+    expect(await db.todos.get(t2.id)).toBeTruthy();
+    expect((await db.skills.get(orig.id))!.notes).toBe("");
+    expect((await db.todos.get(t.id))!.text).toBe("Brot");
+  });
+
+  it("verwirft ungültige Duplikate und warnt bei Skills mit Verlauf", async () => {
+    const a = await createSkill({ name: "A", kategorie: "k", typ: "skill", status: "idee", unsorted: true });
+    const b = await createSkill({ name: "B", kategorie: "k", typ: "skill", status: "idee", unsorted: true });
+    const t = await addTodo("Zahnarzt", "list-allgemein", null, true);
+    await db.sessions.add({ id: "x1", skillId: b.id, start: Date.now(), minutes: 10 });
+    const all = await collectAll();
+    const items = await collectUnsorted({}, all);
+    const sid = (id: string) => all.find((i) => i.id === id)!.sid;
+    const ctx = await tidyContext();
+    const lists = await db.lists.toArray();
+    const hist = await skillsWithHistory();
+    // Kette: A Duplikat von B, B wird gelöscht → A bleibt unverändert; B hat Verlauf → nicht vorausgewählt
+    let r = buildChanges(items, [{ id: sid(a.id), aktion: "duplikat_von", duplikat_von: sid(b.id) }, { id: sid(b.id), aktion: "loeschen" }], ctx, lists, all, hist);
+    const ca = r.changes.find((c) => c.item.id === a.id)!, cb = r.changes.find((c) => c.item.id === b.id)!;
+    expect(ca.action).toBe("update");
+    expect(ca.preselect).toBe(false);
+    expect(cb.action).toBe("delete");
+    expect(cb.preselect).toBe(false);
+    expect(cb.warnings.join(" ")).toContain("Sessions");
+    // Selbst-Duplikat, unbekanntes Original, andere Art
+    r = buildChanges(items, [{ id: sid(a.id), aktion: "duplikat_von", duplikat_von: sid(a.id) }, { id: sid(t.id), aktion: "duplikat_von", duplikat_von: sid(a.id) }, { id: sid(b.id), aktion: "duplikat_von", duplikat_von: "s-zzzzz" }], ctx, lists, all, hist);
+    expect(r.changes.every((c) => c.action === "update" && !c.preselect && c.warnings.length)).toBe(true);
+    await applyChanges(r.changes.filter((c) => c.action === "update"));
+    expect(await db.skills.get(a.id)).toBeTruthy();
   });
 });
 

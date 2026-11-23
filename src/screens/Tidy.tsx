@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db";
 import { copyText } from "../logic";
-import { applyChanges, buildChanges, buildPrompts, collectUnsorted, parseTidyResponse, setSorted, tidyContext, type TidyChange, type TidyContext, type TidyItem, type TidyKind, type TidyScope } from "../tidy";
+import { applyChanges, buildChanges, buildPrompts, collectAll, collectUnsorted, parseTidyResponse, setSorted, skillsWithHistory, tidyContext, type TidyChange, type TidyContext, type TidyItem, type TidyKind, type TidyScope } from "../tidy";
 import { AutoTextarea, CheckCircle, Group, Row, Sheet, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 
@@ -82,8 +82,9 @@ export function TidyItemRows({ kind, id, unsorted }: { kind: "skill" | "todo" | 
 }
 
 export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean; onClose: () => void; scope: TidyScope; forceItems?: boolean }) {
-  const { toast } = useUI();
+  const { toast, actionSheet } = useUI();
   const [items, setItems] = useState<TidyItem[]>([]);
+  const [pool, setPool] = useState<TidyItem[]>([]);
   const [ctx, setCtx] = useState<TidyContext | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [text, setText] = useState("");
@@ -93,9 +94,11 @@ export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean;
   const scopeKey = JSON.stringify(scope);
 
   const reload = async () => {
-    let list = await collectUnsorted(scope);
+    const all = await collectAll();
+    let list = await collectUnsorted(scope, all);
     // Einzel-Aufräumen auch für bereits aufgeräumte Einträge: temporär mitnehmen
-    if (forceItems && scope.ids && list.length === 0) list = await collectAny(scope.ids);
+    if (forceItems && scope.ids && list.length === 0) list = all.filter((i) => scope.ids!.includes(i.id));
+    setPool(all);
     setItems(list);
     setCtx(await tidyContext());
   };
@@ -106,7 +109,7 @@ export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, scopeKey]);
 
-  const prompts = useMemo(() => (ctx ? buildPrompts(items, ctx) : []), [items, ctx]);
+  const prompts = useMemo(() => (ctx ? buildPrompts(items, ctx, undefined, pool) : []), [items, ctx, pool]);
 
   const copy = async (i: number) => {
     const ok = await copyText(prompts[i].text);
@@ -127,24 +130,40 @@ export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean;
     if (!ctx) return;
     const { entries, errors } = parseTidyResponse(src);
     const lists = await db.lists.toArray();
-    const { changes: ch, unmatched } = buildChanges(items, entries, ctx, lists);
+    const { changes: ch, unmatched } = buildChanges(items, entries, ctx, lists, pool, await skillsWithHistory());
     const n: string[] = [...errors];
     if (unmatched.length) n.push(`${unmatched.length} Antwort${unmatched.length === 1 ? "" : "en"} ließ${unmatched.length === 1 ? "" : "en"} sich keinem Eintrag zuordnen (andere Paket-Antwort?).`);
     const missing = items.length - ch.length;
     if (ch.length && missing > 0) n.push(`${missing} Eintrag${missing === 1 ? "" : "e"} ohne Antwort – bleiben unaufgeräumt.`);
     setNotes(n);
     setChanges(ch);
-    setPicked(new Set(ch.map((c) => c.item.id)));
+    setPicked(new Set(ch.filter((c) => c.preselect).map((c) => c.item.id)));
+  };
+
+  const doApply = async (chosen: TidyChange[]) => {
+    const undo = await applyChanges(chosen);
+    const n = (k: TidyChange["action"]) => chosen.filter((c) => c.action === k).length;
+    const parts = [n("update") ? `${n("update")} aufgeräumt` : "", n("delete") ? `${n("delete")} gelöscht` : "", n("merge") ? `${n("merge")} zusammengeführt` : ""].filter(Boolean);
+    toast(parts.join(", "), { label: "Rückgängig", run: () => void undo() });
+    setText(""); setChanges(null); setNotes([]);
+    await reload();
+    if (!(await collectUnsorted(scope)).length) onClose();
   };
 
   const apply = async () => {
     const chosen = (changes ?? []).filter((c) => picked.has(c.item.id));
     if (!chosen.length) return;
-    const undo = await applyChanges(chosen);
-    toast(`${chosen.length} Eintrag${chosen.length === 1 ? "" : "e"} aufgeräumt`, { label: "Rückgängig", run: () => void undo() });
-    setText(""); setChanges(null); setNotes([]);
-    await reload();
-    if (!(await collectUnsorted(scope)).length) onClose();
+    const del = chosen.filter((c) => c.action === "delete").length;
+    const mer = chosen.filter((c) => c.action === "merge").length;
+    if (del || mer) {
+      actionSheet({
+        title: "Bestätigen",
+        message: [del ? `${del} Eintrag${del === 1 ? "" : "e"} wird gelöscht` : "", mer ? `${mer} Eintrag${mer === 1 ? "" : "e"} wird mit dem Original zusammengeführt` : ""].filter(Boolean).join(", ") + ". Danach ist „Rückgängig“ noch kurz möglich.",
+        choices: [{ label: "Jetzt übernehmen", destructive: true, onSelect: () => void doApply(chosen) }],
+      });
+      return;
+    }
+    await doApply(chosen);
   };
 
   const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -180,7 +199,7 @@ export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean;
       {changes && changes.length > 0 && (
         <Group header={`3 · Vorschau · ${changes.length}`} footer="Abgewählte Einträge bleiben unaufgeräumt.">
           {changes.map((c) => (
-            <Row key={c.item.id} className="tidy-row" title={<span className="tidy-title"><s>{c.item.text}</s><Icon name="arrow" size={13} /><b>{String(c.patch.name ?? c.patch.text ?? c.patch.term ?? c.item.text)}</b></span>}
+            <Row key={c.item.id} className={`tidy-row${c.action !== "update" ? " is-destructive" : ""}`} title={<span className="tidy-title"><s>{c.item.text}</s><Icon name="arrow" size={13} />{c.action === "delete" ? <b className="tidy-del">Löschen</b> : c.action === "merge" ? <b className="tidy-del">Duplikat von „{c.target?.text}“</b> : <b>{String(c.patch.name ?? c.patch.text ?? c.patch.term ?? c.item.text)}</b>}</span>}
               subtitle={<span className="tidy-lines">{c.lines.map((l, i) => <span key={i}>{l}</span>)}{c.warnings.map((w, i) => <span key={`w${i}`} className="tidy-warn">{w}</span>)}{c.unclear && <span className="tidy-warn">Unklar – bleibt unter „Klären“</span>}</span>}
               leading={<CheckCircle checked={picked.has(c.item.id)} label="Übernehmen" onToggle={() => toggle(c.item.id)} />}
               onClick={() => toggle(c.item.id)} />
@@ -190,15 +209,4 @@ export function TidySheet({ open, onClose, scope, forceItems }: { open: boolean;
       {changes && changes.length === 0 && <p className="sheet-lead">Keine passenden Einträge in der Antwort gefunden.</p>}
     </Sheet>
   );
-}
-
-async function collectAny(ids: string[]): Promise<TidyItem[]> {
-  // Einzelseite: Eintrag unabhängig von der Markierung
-  const [skills, todos, terms, wishes] = await Promise.all([db.skills.bulkGet(ids), db.todos.bulkGet(ids), db.terms.bulkGet(ids), db.wishes.bulkGet(ids)]);
-  const out: TidyItem[] = [];
-  skills.forEach((s) => s && out.push({ kind: s.typ === "gewohnheit" ? "gewohnheit" : s.typ === "projekt" ? "projekt" : "skill", id: s.id, sid: `s-${s.id.slice(-5)}`, text: s.name, createdAt: s.createdAt, skill: s }));
-  todos.forEach((t) => t && out.push({ kind: "todo", id: t.id, sid: `t-${t.id.slice(-5)}`, text: t.text, createdAt: t.createdAt, todo: t }));
-  terms.forEach((t) => t && out.push({ kind: "begriff", id: t.id, sid: `b-${t.id.slice(-5)}`, text: t.term, createdAt: t.createdAt, term: t }));
-  wishes.forEach((w) => w && out.push({ kind: "wunsch", id: w.id, sid: `w-${w.id.slice(-5)}`, text: w.name, createdAt: w.createdAt, wish: w }));
-  return out;
 }
