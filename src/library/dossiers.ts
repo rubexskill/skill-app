@@ -34,9 +34,15 @@ export const DATE = "23. November 2026";
 const DATE_1 = "22. November 2026";
 
 import { DOSSIERS_ATMUNG } from "./dossiers-atmung";
+import { DOSSIERS_ATMUNG2 } from "./dossiers-atmung2";
+import { DOSSIERS_KOERPER } from "./dossiers-koerper";
+import { DOSSIERS_KOPF } from "./dossiers-kopf";
 
 export const DOSSIERS: Record<string, Dossier> = {
   ...DOSSIERS_ATMUNG,
+  ...DOSSIERS_ATMUNG2,
+  ...DOSSIERS_KOERPER,
+  ...DOSSIERS_KOPF,
   "Box Breathing": {
     date: DATE_1,
     steckbrief: {
