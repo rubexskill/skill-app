@@ -1413,3 +1413,19 @@ html.has-sorter, html.has-sorter body { overscroll-behavior: none; }
 .dos-sources small { display: block; color: var(--label-2); font-size: 12.5px; }
 .dos-sources a { color: var(--accent); overflow-wrap: anywhere; }
 .dos-date { margin-top: 12px; font-size: 13px; color: var(--label-2); }
+
+/* ---------------- Aufräumen ---------------- */
+.unsorted-mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--st-rausfinden); }
+.tidy-strip { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; max-width: var(--content-max); margin: 0 auto; }
+.tidy-strip .mini-pill { min-height: 34px; }
+.tidy-go { background: var(--ink); color: var(--on-ink); }
+.tidy-cta { margin-top: 4px; }
+.tidy-copy { font-size: 15px; font-weight: 600; color: var(--accent); }
+.tidy-notes { margin: 0 20px 14px; font-size: 14px; color: var(--st-rausfinden); }
+.tidy-notes p { margin: 0 0 4px; }
+.tidy-row .row-title { white-space: normal; }
+.tidy-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 15px; line-height: 20px; }
+.tidy-title s { color: var(--label-2); text-decoration-color: var(--label-3); }
+.tidy-title svg { color: var(--label-3); flex: none; }
+.tidy-lines { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; line-height: 18px; }
+.tidy-warn { color: var(--st-rausfinden); }

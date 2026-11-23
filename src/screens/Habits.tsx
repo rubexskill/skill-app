@@ -5,6 +5,7 @@ import { addDays, createSkill, dayKey, deleteSkill, startOfWeek, updateSkill } f
 import { EmptyState, Group, NavButton, NavPage, Row, Switch, SwipeRow, useUI } from "../components/ui";
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
+import { TidyStrip, UnsortedMark } from "./Tidy";
 
 const WEEK = ["M", "D", "M", "D", "F", "S", "S"];
 
@@ -51,9 +52,11 @@ export function Habits() {
   const habits = useLiveQuery(() => db.skills.where("typ").equals("gewohnheit").sortBy("createdAt"), []);
   const checked = useHabitChecks();
   const [draft, setDraft] = useState("");
+  const [only, setOnly] = useState(false);
 
-  const active = (habits ?? []).filter((h) => h.status === "lerne");
-  const rest = (habits ?? []).filter((h) => h.status !== "lerne");
+  const shown = (habits ?? []).filter((h) => !only || h.unsorted);
+  const active = shown.filter((h) => h.status === "lerne");
+  const rest = shown.filter((h) => h.status !== "lerne");
 
   const setActive = (h: Skill, on: boolean) => {
     void updateSkill(h.id, { status: on ? "lerne" : "idee" });
@@ -72,7 +75,7 @@ export function Habits() {
     const on = h.status === "lerne";
     return (
       <SwipeRow key={h.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => undoable(`„${h.title}“ gelöscht`, () => deleteSkill(h.id)) }]}>
-        <Row title={h.title} muted={!on}
+        <Row title={<>{h.title}<UnsortedMark on={h.unsorted} /></>} muted={!on}
           subtitle={<span className="habit-sub"><WeekDots id={h.id} checked={checked} />{s >= 2 && <span className="streak">{s} Tage in Folge</span>}</span>}
           trailing={<Switch checked={on} onChange={(v) => setActive(h, v)} label={`${h.title} aktiv`} />}
           onClick={() => nav.push({ type: "skill", id: h.id })} />
@@ -83,6 +86,7 @@ export function Habits() {
   return (
     <NavPage title="Gewohnheiten" back={depth > 0 ? { label: nav.backLabel, onClick: pop } : undefined}
       trailing={<NavButton icon="plus" label="Neue Gewohnheit" onClick={() => document.getElementById("new-habit")?.focus()} />}>
+      <TidyStrip kinds={["gewohnheit"]} only={only} onToggle={setOnly} />
       <Group footer="Aktive Gewohnheiten erscheinen unter „Heute“ zum Abhaken.">
         <div className="row input-row compose">
           <input id="new-habit" value={draft} placeholder="Neue Gewohnheit" enterKeyHint="done" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />

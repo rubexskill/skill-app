@@ -6,6 +6,7 @@ import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
 import { LinkSheet } from "./SkillSheets";
+import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
 
 const host = (url: string) => {
   try {
@@ -22,6 +23,7 @@ export function Terms() {
   const terms = useLiveQuery(() => db.terms.orderBy("createdAt").reverse().toArray(), []);
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState<Term | null>(null);
+  const [only, setOnly] = useState(false);
 
   const add = async () => {
     const t = draft.trim();
@@ -44,19 +46,21 @@ export function Terms() {
 
   const row = (t: Term) => (
     <SwipeRow key={t.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }]}>
-      <Row title={t.term} muted={t.understood}
+      <Row title={<>{t.term}<UnsortedMark on={t.unsorted} /></>} muted={t.understood}
         subtitle={t.explanation.trim() ? <span className="clamp-1">{t.explanation}</span> : "Noch keine Erklärung"}
         leading={<CheckCircle checked={t.understood} label={`${t.term} verstanden`} onToggle={() => toggle(t)} />}
         chevron onClick={() => setOpen(t)} />
     </SwipeRow>
   );
 
-  const openTerms = (terms ?? []).filter((t) => !t.understood);
-  const done = (terms ?? []).filter((t) => t.understood);
+  const shown = (terms ?? []).filter((t) => !only || t.unsorted);
+  const openTerms = shown.filter((t) => !t.understood);
+  const done = shown.filter((t) => t.understood);
 
   return (
     <NavPage title="Begriffe" back={depth > 0 ? { label: nav.backLabel, onClick: pop } : undefined}
       sub={terms && terms.length ? `${done.length} von ${terms.length} verstanden` : "Dinge, die du verstehen willst"}>
+      <TidyStrip kinds={["begriff"]} only={only} onToggle={setOnly} />
       <Group footer="Erkläre jeden Begriff in eigenen Worten und hake ihn ab, wenn du ihn verstanden hast.">
         <div className="row input-row compose">
           <input value={draft} placeholder="Neuer Begriff" enterKeyHint="done" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
@@ -77,6 +81,7 @@ function TermSheet({ term, onClose }: { term: Term | null; onClose: () => void }
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [understood, setUnderstood] = useState(false);
+  const [note, setNote] = useState("");
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [linkOpen, setLinkOpen] = useState(false);
 
@@ -86,6 +91,7 @@ function TermSheet({ term, onClose }: { term: Term | null; onClose: () => void }
       setName(term.term);
       setText(term.explanation);
       setUnderstood(term.understood);
+      setNote(term.note ?? "");
       setLinks(term.links);
     }
   }, [term]);
@@ -95,6 +101,7 @@ function TermSheet({ term, onClose }: { term: Term | null; onClose: () => void }
       await db.terms.update(shown.id, {
         term: name.trim(),
         explanation: text.trim(),
+        ...(note.trim() !== (shown.note ?? "").trim() ? { note: note.trim() } : {}),
         understood,
         understoodAt: understood ? (shown.understoodAt ?? Date.now()) : null,
         links,
@@ -121,6 +128,9 @@ function TermSheet({ term, onClose }: { term: Term | null; onClose: () => void }
         <Group header="In eigenen Worten" footer="Schreib es so, als würdest du es einem Freund erklären.">
           <div className="row input-row"><AutoTextarea value={text} placeholder="Was bedeutet das?" onChange={(e) => setText(e.target.value)} /></div>
         </Group>
+        {(note || shown?.unsorted) && (
+          <Group header="Notiz"><div className="row input-row"><AutoTextarea value={note} placeholder="Notiz" onChange={(e) => setNote(e.target.value)} /></div></Group>
+        )}
         <Group>
           <Row title="Verstanden" trailing={<Switch checked={understood} onChange={setUnderstood} label="Verstanden" />} />
         </Group>
@@ -133,6 +143,7 @@ function TermSheet({ term, onClose }: { term: Term | null; onClose: () => void }
           ))}
           <Row title="Link hinzufügen" tone="accent" leading={<Icon name="plus" size={18} />} onClick={() => setLinkOpen(true)} />
         </Group>
+        {shown && <Group><TidyItemRows kind="term" id={shown.id} unsorted={shown.unsorted} /></Group>}
         <Group><Row title="Begriff löschen" tone="danger" center onClick={remove} /></Group>
       </Sheet>
       <LinkSheet open={linkOpen} onClose={() => setLinkOpen(false)} onSave={(url, title) => setLinks((x) => [...x, { id: uid(), url, title, addedAt: Date.now() }])} />

@@ -16,6 +16,7 @@ import { CatBadge, Ring } from "./parts";
 import { CategorySheet, LinkSheet, MaterialSheet, typOptions, useAllMaterials } from "./SkillSheets";
 import { MetricSheet, SessionSheet } from "./EditSheets";
 import { ProfileCard } from "./Profile";
+import { TidyItemRows } from "./Tidy";
 import { MilestoneList } from "./Milestones";
 import { Records } from "./Records";
 import { ProjectDetail } from "./Projects";
@@ -234,6 +235,8 @@ function SkillPage({ id }: { id: string }) {
               leading={<span className="icon-tile tile-soft"><Icon name="cards" size={17} /></span>} />
           </Group>
         )}
+
+        {skill.unsorted && <Group><TidyItemRows kind="skill" id={skill.id} unsorted /></Group>}
 
         <Group header="Notizen">
           <div className="row input-row">

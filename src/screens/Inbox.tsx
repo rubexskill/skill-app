@@ -32,7 +32,7 @@ export function Inbox() {
 
   const asTodo = async (item: InboxItem) => {
     const first = await db.lists.orderBy("order").first();
-    const todo = await addTodo(item.text, first?.id ?? "list-allgemein", null);
+    const todo = await addTodo(item.text, first?.id ?? "list-allgemein", null, true);
     await db.inbox.delete(item.id);
     toast(`Als To-do in „${first?.name ?? "Allgemein"}“`, {
       label: "Rückgängig",
@@ -99,7 +99,7 @@ export function Inbox() {
       <InboxSort open={sorting} onClose={() => { setSorting(false); bump((n) => n + 1); }} />
 
       <NewSkillSheet open={!!asSkill} onClose={() => setAsSkill(null)} initialName={asSkill?.text ?? ""}
-        onCreated={() => { if (asSkill) void db.inbox.delete(asSkill.id); }}
+        onCreated={(s) => { if (asSkill) void db.inbox.delete(asSkill.id); void db.skills.update(s.id, { unsorted: true }); }}
         onOpenExisting={(s) => nav.push({ type: "skill", id: s.id })} />
     </NavPage>
   );

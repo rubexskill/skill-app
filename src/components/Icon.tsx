@@ -320,6 +320,12 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M12 3.8V8M12 16v4.2M3.8 12H8M16 12h4.2" />
     </g>
   ),
+  tidy: (
+    <g {...S}>
+      <circle cx="12" cy="12" r="7.5" strokeDasharray="3 3.2" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </g>
+  ),
   undo: (
     <g {...S}>
       <path d="M9 6.5L4.5 11 9 15.5" />

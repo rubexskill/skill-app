@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "../db";
 import { backupFileName, exportBackup, minutesLabel, readBackup, restoreBackup, shareFile } from "../logic";
+import { TidyButton } from "./Tidy";
 import { CheckCircle, Group, NavPage, Row, Segmented, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
@@ -80,6 +81,7 @@ export function More() {
       )}
 
       <Group header="Importieren & Abgleichen">
+        <TidyButton inGroup />
         <Row title="Markdown importieren" subtitle="Listen aus einer .md-Datei übernehmen" chevron onClick={() => setMdOpen(true)}
           leading={<span className="icon-tile tile-accent"><Icon name="import" size={17} /></span>} />
         <Row title="Abgleichen" subtitle="iPhone und iPad zusammenführen" chevron onClick={() => setSyncOpen(true)}

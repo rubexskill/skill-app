@@ -4,7 +4,8 @@ import { db, uid, type Todo } from "../db";
 import { addDays, addTodo, dayKey, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
 import { parseQuickTodo, todoBucket, type TodoBucket } from "../quickparse";
 import { catVars } from "../categories";
-import { CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
+import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
+import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 /** Abhaken mit kurzer Animation, erst danach wandert die Zeile nach „Erledigt“. */
@@ -56,6 +57,7 @@ export function Todos() {
   const [editing, setEditing] = useState<Todo | null>(null);
   const [listsOpen, setListsOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [only, setOnly] = useState(false);
   const { completing, complete } = useCompleting();
 
   const setListId = (id: string) => {
@@ -70,7 +72,7 @@ export function Todos() {
   const today = dayKey(new Date());
   const listName = (id: string) => lists?.find((l) => l.id === id)?.name ?? "";
 
-  const visible = (todos ?? []).filter((t) => listId === ALL_LISTS || t.listId === listId);
+  const visible = (todos ?? []).filter((t) => (listId === ALL_LISTS || t.listId === listId) && (!only || t.unsorted));
   const groups = useMemo(() => {
     const open = visible.filter((t) => !t.done).sort((a, b) => (a.due ?? "9").localeCompare(b.due ?? "9") || a.createdAt - b.createdAt);
     const by: Record<TodoBucket, Todo[]> = { overdue: [], today: [], week: [], later: [], none: [] };
@@ -118,7 +120,7 @@ export function Todos() {
       <SwipeRow key={t.id}
         leading={t.done ? { label: "Offen", tone: "gray", onClick: () => void setTodoDone(t.id, false) } : { label: "Erledigt", tone: "ok", onClick: () => complete(t.id) }}
         actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }, ...(t.done ? [] : [{ label: "Verschieben", tone: "gray" as const, onClick: () => reschedule(t) }])]}>
-        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={t.text} muted={isOn}
+        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{t.text}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
           detail={(showDue || listId === ALL_LISTS) ? (
             <span className="todo-meta">
               {showDue && <span className={overdue ? "overdue" : ""}>{dueLabel(t.due!)}</span>}
@@ -149,6 +151,7 @@ export function Todos() {
           <button className="pill pill-add" onClick={() => setListsOpen(true)} aria-label="Liste hinzufügen"><Icon name="plus" size={15} /></button>
         </div>
       }>
+      <TidyStrip kinds={["todo"]} only={only} onToggle={setOnly} />
       <Group footer={parsed && (parsed.due || parsed.listId) ? (
         <span className="quick-hint">
           {parsed.due ? dueLabel(parsed.due) : ""}{parsed.due && parsed.listId ? " · " : ""}{parsed.listId ? `Liste „${listName(parsed.listId)}“` : ""}
@@ -205,10 +208,12 @@ function TodoSheet({ todo, onClose }: { todo: Todo | null; onClose: () => void }
   const [listId, setListId] = useState("");
   const [due, setDue] = useState<string | null>(null);
   const [shown, setShown] = useState<Todo | null>(null);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     if (todo) {
       setShown(todo);
+      setNote(todo.note ?? "");
       setText(todo.text);
       setListId(todo.listId);
       setDue(todo.due);
@@ -216,7 +221,7 @@ function TodoSheet({ todo, onClose }: { todo: Todo | null; onClose: () => void }
   }, [todo]);
 
   const save = async () => {
-    if (shown && text.trim()) await db.todos.update(shown.id, { text: text.trim(), listId, due });
+    if (shown && text.trim()) await db.todos.update(shown.id, { text: text.trim(), listId, due, ...(note.trim() !== (shown.note ?? "").trim() ? { note: note.trim() } : {}) });
     onClose();
   };
 
@@ -233,11 +238,17 @@ function TodoSheet({ todo, onClose }: { todo: Todo | null; onClose: () => void }
           </span>} />
         {due && <Row title="Datum entfernen" tone="accent" onClick={() => setDue(null)} />}
       </Group>
+      {(note || shown?.unsorted) && (
+        <Group header="Notiz">
+          <div className="row input-row"><AutoTextarea value={note} placeholder="Notiz" onChange={(e) => setNote(e.target.value)} /></div>
+        </Group>
+      )}
       <Group header="Liste">
         {(lists ?? []).map((l) => (
           <Row key={l.id} title={l.name} onClick={() => setListId(l.id)} trailing={l.id === listId ? <Icon name="check" size={18} className="row-check" /> : undefined} />
         ))}
       </Group>
+      {shown && <Group><TidyItemRows kind="todo" id={shown.id} unsorted={shown.unsorted} /></Group>}
       <Group>
         <Row title="To-do löschen" tone="danger" center onClick={() => {
           const copy = shown;

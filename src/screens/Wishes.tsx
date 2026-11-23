@@ -1,3 +1,4 @@
+import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type Wish } from "../db";
@@ -27,6 +28,7 @@ export function Wishes() {
   const wishes = useLiveQuery(() => db.wishes.orderBy("createdAt").reverse().toArray(), []);
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState<Wish | null>(null);
+  const [only, setOnly] = useState(false);
 
   const add = async () => {
     const t = draft.trim();
@@ -45,7 +47,7 @@ export function Wishes() {
 
   const row = (w: Wish) => (
     <SwipeRow key={w.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(w) }]}>
-      <Row title={w.name} muted={w.bought}
+      <Row title={<>{w.name}<UnsortedMark on={w.unsorted} /></>} muted={w.bought}
         subtitle={w.note.trim() ? <span className="clamp-1">{w.note}</span> : w.url ? host(w.url) : undefined}
         leading={<CheckCircle checked={w.bought} label={`${w.name} gekauft`} onToggle={() => toggle(w)} />}
         trailing={w.url ? <Icon name="link" size={16} className="row-link-hint" /> : undefined}
@@ -53,12 +55,14 @@ export function Wishes() {
     </SwipeRow>
   );
 
-  const openWishes = (wishes ?? []).filter((w) => !w.bought);
-  const bought = (wishes ?? []).filter((w) => w.bought);
+  const shownW = (wishes ?? []).filter((w) => !only || w.unsorted);
+  const openWishes = shownW.filter((w) => !w.bought);
+  const bought = shownW.filter((w) => w.bought);
 
   return (
     <NavPage title="Wunschliste" back={depth > 0 ? { label: nav.backLabel, onClick: pop } : undefined}
       sub={wishes && wishes.length ? `${bought.length} von ${wishes.length} gekauft` : undefined}>
+      <TidyStrip kinds={["wunsch"]} only={only} onToggle={setOnly} />
       <Group>
         <div className="row input-row compose">
           <input value={draft} placeholder="Neuer Wunsch" enterKeyHint="done" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
@@ -126,6 +130,7 @@ function WishSheet({ wish, onClose }: { wish: Wish | null; onClose: () => void }
       <Group>
         <Row title="Gekauft" trailing={<Switch checked={bought} onChange={setBought} label="Gekauft" />} />
       </Group>
+      {shown && <Group><TidyItemRows kind="wish" id={shown.id} unsorted={shown.unsorted} /></Group>}
       <Group><Row title="Wunsch löschen" tone="danger" center onClick={remove} /></Group>
     </Sheet>
   );

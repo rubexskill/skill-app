@@ -97,6 +97,7 @@ export function ActiveCard({ skill, total, now, big }: { skill: Skill; total: nu
 }
 
 /** Zeile in Listen. Play-Knopf nur bei aktiven Skills. */
+import { UnsortedMark } from "./Tidy";
 export function SkillRow({ skill, total, now, showCategory }: { skill: Skill; total: number; now: number; showCategory?: boolean }) {
   const nav = useNav();
   const running = !!skill.timerStart;
@@ -108,7 +109,7 @@ export function SkillRow({ skill, total, now, showCategory }: { skill: Skill; to
   if (showCategory) subtitle = <>{shortCategory(skill.kategorie)}{subtitle ? <span className="sep">{subtitle}</span> : null}</>;
 
   return (
-    <Row className="cv skill-row" style={catVars(skill.kategorie)} title={skill.title} subtitle={subtitle}
+    <Row className="cv skill-row" style={catVars(skill.kategorie)} title={<>{skill.title}<UnsortedMark on={skill.unsorted} /></>} subtitle={subtitle}
       selected={nav.selectedSkill === skill.id}
       leading={<StatusIcon status={skill.status} />}
       detail={!active && total > 0 ? minutesLabel(total) : undefined}

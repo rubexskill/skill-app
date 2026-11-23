@@ -9,6 +9,7 @@ import { ALL, isAreaCategory, useNav } from "../nav";
 import { ActiveCard, useTotals } from "./parts";
 import { NewSkillSheet } from "./SkillSheets";
 import { SuggestSheet } from "./Suggest";
+import { TidyButton } from "./Tidy";
 
 /** Kategorien mit Anzahl – nur Skills, ohne die eigenen Bereiche Gewohnheiten/Projekte */
 export function useCategoryCounts() {
@@ -90,6 +91,8 @@ export function Overview() {
           </div>
         </section>
       )}
+
+      <TidyButton />
 
       {skills && skills.length > 0 && <h2 className="section-title">Aktiv</h2>}
       {skills && skills.length === 0 ? null : skills && active.length === 0 ? (

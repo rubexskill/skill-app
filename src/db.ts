@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import { buildSeed, defaultLists, withDefaults } from "./seed";
+import { backfillUnsorted } from "./backfill";
 
 // Interne Schlüssel bleiben wie in Version 1 (Backups bleiben kompatibel), die Anzeige ist neu.
 export type Status = "rausfinden" | "idee" | "lerne" | "kann";
@@ -104,6 +105,8 @@ export interface Skill extends Synced {
   profile: Profile | null;
   metric: Metric | null;
   test: ExamTest | null;
+  /** Aus der Inbox einsortiert, noch nicht aufgeräumt */
+  unsorted?: boolean;
 }
 
 export interface ExamQuestion {
@@ -181,6 +184,8 @@ export interface Todo extends Synced {
   done: boolean;
   doneAt: number | null;
   createdAt: number;
+  note?: string;
+  unsorted?: boolean;
 }
 
 export interface Term extends Synced {
@@ -192,6 +197,8 @@ export interface Term extends Synced {
   understoodAt: number | null;
   links: LinkItem[];
   createdAt: number;
+  note?: string;
+  unsorted?: boolean;
 }
 
 export interface Wish extends Synced {
@@ -202,6 +209,7 @@ export interface Wish extends Synced {
   bought: boolean;
   boughtAt: number | null;
   createdAt: number;
+  unsorted?: boolean;
 }
 
 export interface Card extends Synced {
@@ -306,6 +314,13 @@ export class SkillDB extends Dexie {
             if (r.upd == null) r.upd = r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0;
           });
         }
+      });
+
+    // Version 5: Markierung „Unaufgeräumt“ (nicht indiziert, nur neue Felder). Rückwirkend gesetzt, siehe backfill.ts.
+    this.version(5)
+      .stores({})
+      .upgrade(async (tx) => {
+        await backfillUnsorted({ skills: tx.table("skills"), todos: tx.table("todos"), terms: tx.table("terms"), wishes: tx.table("wishes") });
       });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.

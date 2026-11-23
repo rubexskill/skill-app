@@ -16,6 +16,7 @@ Veröffentlicht auf GitHub Pages: https://rubexskill.github.io/skill-app/ (Konto
 - `seed.ts` Startdaten + `withDefaults` (ordnet Schätzwerte/Steckbriefe über Originalname bzw. Kurztitel zu)
 - `library/` **öffentliche Skill-Bibliothek**: `Skills.md` (Originalname je Kategorie; die Überschrift bestimmt den Typ: „Gewohnheiten“ = Gewohnheit, „Projekte & Besorgungen“ = Projekt, sonst Skill), `meta.ts` (Originalname, Kurztitel, Schätzwerte), `profiles1-3.ts` (Steckbriefe, Schlüssel = Kurztitel), `types.ts`
 - `library/dossiers.ts` **Wissens-Dossiers** (recherchiert, mit Quellen; Schlüssel = Kurztitel; Anzeige in `screens/Dossier.tsx` unter „Mehr erfahren“). Videos mit `checked: false`, solange Kanal/Inhalt nicht geöffnet wurden. Quellenhinweise `[n]` müssen zur Quellenliste passen (Test `tests/dossiers.test.ts`).
+- `tidy.ts` + `screens/Tidy.tsx` **Aufräumen**: Skills/To-dos/Begriffe/Wünsche mit `unsorted: true` (aus der Inbox einsortiert) → Prompt (Pakete à 30) → JSON-Antwort einfügen → Vorschau → übernehmen; Original bleibt in Notizen. `backfill.ts` markiert rückwirkend (Dexie-Version 5).
 - `seed/data-empty.ts` leere Startdaten (öffentlicher Build); `seed/private/` **nur lokal, gitignored**: persönliche Startliste (Notizen, Apps, Test-Session)
 - `screens/` Bildschirme · `components/` UI-Bausteine · `trainer/` Trainer (Morse mit Koch-Kurs, Kopfrechnen, Wochentag/Doomsday, Flaggen, Atem, Stoppuhr, Karteikarten; `audio.ts` iOS-Ton) · `styles.css` gesamtes Design
 - `tests/` Vitest-Tests (Doomsday, Morse, Wiederholungsplan, Abgleich, Import, Statistik)

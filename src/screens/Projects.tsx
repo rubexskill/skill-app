@@ -6,6 +6,7 @@ import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, 
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
 import { MilestoneList } from "./Milestones";
+import { TidyStrip, UnsortedMark } from "./Tidy";
 
 const PROJECT_CATEGORY = "Projekte & Besorgungen";
 
@@ -21,9 +22,11 @@ export function Projects() {
   const { undoable, toast } = useUI();
   const projects = useLiveQuery(() => db.skills.where("typ").equals("projekt").sortBy("createdAt"), []);
   const [draft, setDraft] = useState("");
+  const [only, setOnly] = useState(false);
 
-  const open = (projects ?? []).filter((p) => p.status !== "kann");
-  const done = (projects ?? []).filter((p) => p.status === "kann");
+  const shown = (projects ?? []).filter((p) => !only || p.unsorted);
+  const open = shown.filter((p) => p.status !== "kann");
+  const done = shown.filter((p) => p.status === "kann");
 
   const add = async () => {
     const t = draft.trim();
@@ -42,7 +45,7 @@ export function Projects() {
     const { n, d } = progress(p);
     return (
       <SwipeRow key={p.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => undoable(`„${p.title}“ gelöscht`, () => deleteSkill(p.id)) }]}>
-        <Row title={p.title} muted={p.status === "kann"}
+        <Row title={<>{p.title}<UnsortedMark on={p.unsorted} /></>} muted={p.status === "kann"}
           subtitle={n ? <span className="mini-progress"><span className="mini-progress-bar"><i style={{ width: `${(d / n) * 100}%` }} /></span>{d} von {n}</span> : p.profile?.about}
           leading={<CheckCircle checked={p.status === "kann"} label={p.title} onToggle={() => toggleDone(p)} />}
           chevron onClick={() => nav.push({ type: "project", id: p.id })} />
@@ -53,6 +56,7 @@ export function Projects() {
   return (
     <NavPage title="Projekte" back={depth > 0 ? { label: nav.backLabel, onClick: pop } : undefined}
       trailing={<NavButton icon="plus" label="Neues Projekt" onClick={() => document.getElementById("new-project")?.focus()} />}>
+      <TidyStrip kinds={["projekt"]} only={only} onToggle={setOnly} />
       <Group>
         <div className="row input-row compose">
           <input id="new-project" value={draft} placeholder="Neues Projekt" enterKeyHint="done" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />

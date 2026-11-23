@@ -9,6 +9,7 @@ import { CategoryIcon, catVars, shortCategory } from "../categories";
 import { ALL, useNav } from "../nav";
 import { SkillRow, StatusIcon, useTotals } from "./parts";
 import { NewSkillSheet } from "./SkillSheets";
+import { TidyStrip } from "./Tidy";
 
 export function SkillList({ category, isRoot }: { category: string; isRoot?: boolean }) {
   const nav = useNav();
@@ -24,6 +25,7 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
   const [typF, setTypF] = useState<Set<Typ>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [onlyUnsorted, setOnlyUnsorted] = useState(false);
   const now = useNow(!!skills?.some((s) => s.timerStart));
 
   const filtered = useMemo(() => {
@@ -32,9 +34,10 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
       (s) =>
         (!statusF.size || statusF.has(s.status)) &&
         (!typF.size || typF.has(s.typ)) &&
+        (!onlyUnsorted || !!s.unsorted) &&
         (!q || normalize(`${s.title} ${s.name} ${s.kategorie} ${s.notes}`).includes(q)),
     );
-  }, [skills, query, statusF, typF]);
+  }, [skills, query, statusF, typF, onlyUnsorted]);
 
   // In einer Kategorie nach Status gruppieren, bei „Alle“ nach Kategorie.
   const sections = useMemo(() => {
@@ -74,6 +77,8 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
       header={
         <div className="list-tools">
           <SearchField value={query} onChange={setQuery} />
+          <div style={{ height: 10 }} />
+          <TidyStrip kinds={["skill", "gewohnheit", "projekt"]} ids={(skills ?? []).filter((s) => s.unsorted).map((s) => s.id)} only={onlyUnsorted} onToggle={setOnlyUnsorted} />
           {filterActive && (
             <div className="filter-summary">
               <span>Gefiltert: {[...STATUSES.filter((s) => statusF.has(s)).map((s) => STATUS_LABEL[s]), ...TYPES.filter((t) => typF.has(t)).map((t) => TYP_LABEL[t])].join(", ")}</span>
@@ -84,7 +89,7 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
       }
     >
       {skills && filtered.length === 0 && (
-        query.trim() || filterActive
+        query.trim() || filterActive || onlyUnsorted
           ? <EmptyState icon="search" title="Keine Treffer" text={query.trim() ? `Nichts gefunden für „${query.trim()}“.` : "Kein Eintrag passt zu diesem Filter."} />
           : <EmptyState icon="stack" title="Noch leer" text="Tippe auf +, um hier etwas anzulegen." />
       )}

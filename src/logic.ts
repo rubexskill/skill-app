@@ -139,7 +139,7 @@ export async function saveSessionNote(r: StopResult, rating: 1 | 2 | 3 | null, t
 
 // ---------------- Skills ----------------
 
-export async function createSkill(input: { name: string; title?: string; kategorie: string; typ: Typ; status: Status; notes?: string; links?: LinkItem[] }) {
+export async function createSkill(input: { name: string; title?: string; kategorie: string; typ: Typ; status: Status; notes?: string; links?: LinkItem[]; unsorted?: boolean }) {
   const now = Date.now();
   const skill = withDefaults({
     id: uid(),
@@ -150,6 +150,7 @@ export async function createSkill(input: { name: string; title?: string; kategor
     status: input.status,
     notes: input.notes ?? "",
     links: input.links ?? [],
+    unsorted: input.unsorted,
     createdAt: now,
     updatedAt: now,
   });
@@ -198,8 +199,8 @@ export const isActiveHabit = (s: Skill) => s.status === "lerne" && s.typ === "ge
 
 // ---------------- To-dos ----------------
 
-export async function addTodo(text: string, listId: string, due: string | null) {
-  const t: Todo = { id: uid(), listId, text: text.trim(), due, done: false, doneAt: null, createdAt: Date.now() };
+export async function addTodo(text: string, listId: string, due: string | null, unsorted?: boolean) {
+  const t: Todo = { id: uid(), listId, text: text.trim(), due, done: false, doneAt: null, createdAt: Date.now(), ...(unsorted ? { unsorted: true } : {}) };
   await db.todos.add(t);
   return t;
 }

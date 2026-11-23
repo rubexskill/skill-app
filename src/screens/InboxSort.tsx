@@ -113,7 +113,7 @@ export function InboxSort({ open, onClose }: { open: boolean; onClose: () => voi
             : { kategorie: "Gewohnheiten", typ: "gewohnheit" as const, status: "lerne" as const };
         let created: Skill | null = null;
         await db.transaction("rw", db.skills, db.inbox, async () => {
-          created = await createSkill({ name: item.text, ...cfg });
+          created = await createSkill({ name: item.text, ...cfg, unsorted: true });
           await db.inbox.delete(item.id);
         });
         const sid = (created as Skill | null)!.id;
@@ -123,7 +123,7 @@ export function InboxSort({ open, onClose }: { open: boolean; onClose: () => voi
         const q = parseQuickTodo(item.text, lists);
         let todo: Todo | null = null;
         await db.transaction("rw", db.todos, db.inbox, async () => {
-          todo = await addTodo(q.text || item.text, opt.listId ?? lists[0]?.id ?? "list-allgemein", q.due);
+          todo = await addTodo(q.text || item.text, opt.listId ?? lists[0]?.id ?? "list-allgemein", q.due, true);
           await db.inbox.delete(item.id);
         });
         const tid = (todo as Todo | null)!.id;
@@ -132,7 +132,7 @@ export function InboxSort({ open, onClose }: { open: boolean; onClose: () => voi
       case "term": {
         const id = uid();
         await db.transaction("rw", db.terms, db.inbox, async () => {
-          await db.terms.add({ id, term: item.text, explanation: "", understood: false, understoodAt: null, links: [], createdAt: Date.now() });
+          await db.terms.add({ id, term: item.text, explanation: "", understood: false, understoodAt: null, links: [], createdAt: Date.now(), unsorted: true });
           await db.inbox.delete(item.id);
         });
         return async () => void (await db.transaction("rw", db.terms, db.inbox, async () => { await db.terms.delete(id); await db.inbox.put(item); }));
@@ -140,7 +140,7 @@ export function InboxSort({ open, onClose }: { open: boolean; onClose: () => voi
       case "wish": {
         const id = uid();
         await db.transaction("rw", db.wishes, db.inbox, async () => {
-          await db.wishes.add({ id, name: item.text, url: "", note: "", bought: false, boughtAt: null, createdAt: Date.now() });
+          await db.wishes.add({ id, name: item.text, url: "", note: "", bought: false, boughtAt: null, createdAt: Date.now(), unsorted: true });
           await db.inbox.delete(item.id);
         });
         return async () => void (await db.transaction("rw", db.wishes, db.inbox, async () => { await db.wishes.delete(id); await db.inbox.put(item); }));
