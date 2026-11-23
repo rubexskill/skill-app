@@ -37,12 +37,20 @@ import { DOSSIERS_ATMUNG } from "./dossiers-atmung";
 import { DOSSIERS_ATMUNG2 } from "./dossiers-atmung2";
 import { DOSSIERS_KOERPER } from "./dossiers-koerper";
 import { DOSSIERS_KOPF } from "./dossiers-kopf";
+import { DOSSIERS_KREATIV } from "./dossiers-kreativ";
+import { DOSSIERS_WISSEN } from "./dossiers-wissen";
+import { DOSSIERS_GEWOHNHEITEN } from "./dossiers-gewohnheiten";
+import { DOSSIERS_PROJEKTE } from "./dossiers-projekte";
 
 export const DOSSIERS: Record<string, Dossier> = {
   ...DOSSIERS_ATMUNG,
   ...DOSSIERS_ATMUNG2,
   ...DOSSIERS_KOERPER,
   ...DOSSIERS_KOPF,
+  ...DOSSIERS_KREATIV,
+  ...DOSSIERS_WISSEN,
+  ...DOSSIERS_GEWOHNHEITEN,
+  ...DOSSIERS_PROJEKTE,
   "Box Breathing": {
     date: DATE_1,
     steckbrief: {
