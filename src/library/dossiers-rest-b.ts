@@ -271,7 +271,7 @@ export const DOSSIERS_REST_B: Record<string, Dossier> = {
       "Die Replikationslage ist offen: Ich fand nur einen kleineren neueren Versuch, der Ergebnisse stützt. [3]",
     ],
     videos: [
-      { title: "Ben Franklin Effect: Can You Do Me A Favor? -- Cognitive Biases Series", id: "-vwJepq92eU", channel: "Academy 4 Social Change", why: "Erklärung des Effekts.", checked: true },
+      { title: "Ben Franklin Effect: Can You Do Me A Favor? -- Cognitive Biases Series", id: "-vwJepq92eU", channel: "Academy 4 Social Civics", why: "Erklärung des Effekts.", checked: true },
       { title: "The Franklin Effect", id: "Kazvj9yo9io", channel: "Samo Burja", why: "Kurze Darstellung.", checked: true },
     ],
     videoNote: "Zwei Videos; Inhalt nur nach Titel und Kanal beurteilt, nicht angesehen.",
