@@ -18,7 +18,7 @@ export interface Dossier {
   safety: string[];
   /** Widersprüche oder Unsicherheiten in der Literatur */
   conflicts: string[];
-  /** checked = Link und Inhalt vom Recherchierenden geöffnet und bestätigt */
+  /** checked = Link, Titel und Kanal über YouTube (oEmbed) bestätigt am 23.11.2026; Inhalt nur nach Titel beurteilt, Video nicht angesehen */
   videos: { title: string; id: string; channel: string; why: string; checked: boolean }[];
   sources: { title: string; url: string; kind: string }[];
   /** Begründung der Trainer-Standardwerte */
@@ -42,11 +42,11 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Beim langsamen Atmen schwankt die Herzfrequenz stärker im Takt der Atmung (Atem-Herzschlag-Kopplung). Eine Übersichtsarbeit mit 223 Studien fand: Die vagal vermittelte Herzratenvariabilität steigt während des langsamen Atmens, kurz danach und nach mehrwöchigem Training. [3]",
       "Als Mechanismus wird diskutiert, dass Atmen bei etwa 6 Zügen pro Minute den Kreislauf im Resonanzbereich anregt und den Blutdruckreflex stärkt. Das ist eine Hypothese, kein gesichertes Ergebnis. [4]",
       "Wichtig für die Einordnung: Fast alle Studien untersuchen langsames Atmen allgemein, nicht Box Breathing mit seinen Haltephasen. Die Übertragung auf Box Breathing ist eine Annahme. [3][4]",
-      "Die bekannteste direkte Studie (Balban et al. 2023): 111 Freiwillige übten einen Monat lang täglich 5 Minuten Cyclic Sighing, Box Breathing, zyklische Hyperventilation mit Halten oder Achtsamkeit. Alle Gruppen wurden ruhiger; Atemübungen insgesamt hoben die Stimmung stärker als Achtsamkeit, am meisten Cyclic Sighing. Bei der Angst lagen Box Breathing (−3,75 Punkte pro Tag) und Achtsamkeit (−3,95) praktisch gleichauf. [1][2]",
+      "Die bekannteste direkte Studie (Balban et al. 2023): 111 Freiwillige übten einen Monat lang täglich 5 Minuten Cyclic Sighing, Box Breathing, zyklische Hyperventilation mit Halten oder Achtsamkeit. Alle Gruppen wurden ruhiger; Atemübungen insgesamt hoben die Stimmung stärker als Achtsamkeit, am meisten Cyclic Sighing. Bei der Angst verbesserten sich Box Breathing und Achtsamkeit nach einer Auswertung in ähnlichem Ausmaß; die genauen Zahlenwerte konnte ich nicht selbst im Volltext prüfen. [1][2]",
     ],
     evidence: {
       level: "teilweise",
-      why: "Langsames Atmen wirkt kurzfristig messbar auf Herzfrequenz und Entspannung, doch Box Breathing selbst ist nur in einer qualitativ mäßigen Studie direkt untersucht worden und dort nicht besser als Achtsamkeit.",
+      why: "Langsames Atmen wirkt kurzfristig messbar auf Herzfrequenz und Entspannung, doch Box Breathing selbst ist nur in einer Studie direkt untersucht worden und dort bei der Angst nicht klar besser als Achtsamkeit.",
     },
     steps: [
       "Bequem sitzen, Rücken gerade, Schultern locker. Eine Hand auf den Bauch.",
@@ -76,27 +76,26 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Sofortige Wirkung erwarten; bei vielen Menschen kommt die Ruhe erst nach einigen Runden.",
     ],
     safety: [
-      "Gemütliche Atmung ist in der Regel unbedenklich; das Luft-Halten verlangt mehr Vorsicht. Die Hinweise zu Ohnmachtsneigung, Blutdruckproblemen, Asthma und Schwangerschaft stammen von Anbieter- und Gesundheitsseiten, nicht aus einer medizinischen Leitlinie. Im Zweifel ärztlich fragen. [6][7]",
+      "Gemütliche Atmung ist in der Regel unbedenklich; das Luft-Halten verlangt mehr Vorsicht. Die Hinweise zu Ohnmachtsneigung, Blutdruckproblemen, Asthma und Schwangerschaft stammen von Anbieter- und Gesundheitsseiten, nicht aus einer medizinischen Leitlinie. Im Zweifel ärztlich fragen. [6]",
       "Bei Schwindel oder Kribbeln: aufhören, normal atmen.",
     ],
     conflicts: [
       "Studien zu den Dauerwirkungen widersprechen sich: Kurzfristig sind die Effekte klarer als nach Wochen. [3][5]",
-      "Die Balban-Studie wurde in einer Übersicht als qualitativ schwach eingestuft; die Daten dürfen nicht überbewertet werden. [1]",
+      "Eine Übersichtsarbeit stufte die Balban-Studie als qualitativ schwach ein (von mir nicht im Original geprüft); die Daten sollten nicht überbewertet werden. [1]",
       "Mit 4 Sekunden je Phase atmest du etwa 3,75-mal pro Minute – langsamer als die oft genannten 6 Atemzüge pro Minute. Ob das besser oder schlechter ist, ist offen. [4]",
     ],
     videos: [
-      { title: "4-Minute Box Breathing (4-4-4-4) for Anxiety, Stress Relief & Focus", id: "2NO7wJBQLIg", channel: "Kanal noch nicht geprüft", why: "Vier Minuten zum Mitmachen im 4-4-4-4-Rhythmus.", checked: false },
-      { title: "Box Breathing for Calm & Focus", id: "u0th_ktl1UI", channel: "Kanal noch nicht geprüft", why: "Geführte Übung für den Alltag.", checked: false },
-      { title: "The 'Huberman Sequence' Breathwork – Physiological Sigh – Box Breathing – Cyclic Hyperventilation", id: "bNVfSnGhz2M", channel: "Kanal noch nicht geprüft", why: "Zeigt die drei Übungen, die in der Balban-Studie verglichen wurden.", checked: false },
+      { title: "Stop Stress Fast (4-Minute Box Breathing)", id: "2NO7wJBQLIg", channel: "ANYMYOGA", why: "Vier Minuten zum Mitmachen im 4-4-4-4-Rhythmus.", checked: true },
+      { title: "Box Breathing for Calm & Focus | 4-4-4-4 Breathing Exercise", id: "u0th_ktl1UI", channel: "Pocket Breath Coach – Luke Horton", why: "Geführte Übung für den Alltag.", checked: true },
+      { title: "The 'Huberman Sequence' Breathwork – Physiological Sigh – Box Breathing – Cyclic Hyperventilation", id: "bNVfSnGhz2M", channel: "Recal Training", why: "Zeigt die drei Übungen, die in der Balban-Studie verglichen wurden.", checked: true },
     ],
     sources: [
       { title: "Balban et al. 2023, Cell Reports Medicine – Brief structured respiration practices", url: "https://pubmed.ncbi.nlm.nih.gov/36630953/", kind: "Studie" },
       { title: "Stanford Medicine: ‚Cyclic sighing‘ can help breathe away anxiety", url: "https://med.stanford.edu/news/insights/2023/02/cyclic-sighing-can-help-breathe-away-anxiety.html", kind: "Universität" },
-      { title: "Effects of voluntary slow breathing on heart rate and heart rate variability: systematic review and meta-analysis (2022)", url: "https://fis.dshs-koeln.de/de/publications/effects-of-voluntary-slow-breathing-on-heart-rate-and-heart-rate-/", kind: "Übersichtsarbeit" },
+      { title: "Effects of voluntary slow breathing on heart rate and heart rate variability: a systematic review and meta-analysis (223 Studien)", url: "https://fis.dshs-koeln.de/de/publications/effects-of-voluntary-slow-breathing-on-heart-rate-and-heart-rate-/", kind: "Übersichtsarbeit" },
       { title: "Zaccaro et al. 2018, Frontiers in Human Neuroscience – How Breath-Control Can Change Your Life", url: "https://pubmed.ncbi.nlm.nih.gov/30245619/", kind: "Übersichtsarbeit" },
-      { title: "Metaanalyse zu langsamem Atmen, Mindfulness (31 Studien, n = 1.133)", url: "https://link.springer.com/article/10.1007/s12671-023-02294-2", kind: "Übersichtsarbeit" },
+      { title: "The Effect of Slow-Paced Breathing on Cardiovascular and Emotion Functions: A Meta-Analysis and Systematic Review (Mindfulness 2024; 31 Studien, n = 1.133)", url: "https://link.springer.com/article/10.1007/s12671-023-02294-2", kind: "Übersichtsarbeit" },
       { title: "Oxygen Advantage: Safety guidelines for breathwork", url: "https://oxygenadvantage.com/blogs/blog/safety-guidelines-oxygen-advantage-breathwork-training", kind: "Anbieter (Sekundärquelle)" },
-      { title: "US-Veteranenverwaltung: Diaphragmatic breathing", url: "https://www.va.gov/WHOLEHEALTHLIBRARY/tools/diaphragmatic-breathing.asp", kind: "Behörde" },
     ],
     trainer: "Der Atem-Trainer startet mit 4 Sekunden je Phase (üblicher Wert) und lässt 3 bis 6 Sekunden zu. Vier Sekunden sind der gängige Einstieg; wer schneller in Atemnot kommt, nimmt 3 (dann etwa 5 Atemzüge pro Minute, nahe an den oft genannten 6). Alles lässt sich ändern. [3][4]",
   },
@@ -113,11 +112,11 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Beim Handstand wird aus dem Stehen ein Stützen auf den Händen. Motorikforscher fanden, dass die Handgelenke vor allem zur Haltungskontrolle beitragen: Kippt der Körper nach vorn, drücken die Finger gegen den Boden; kippt er nach hinten, die Handballen. Eine Studie mit 25 Sportstudierenden: Wer drei Wochen lang eine solche Handgelenksstrategie bewusst übte, hielt länger und kontrollierte die Balance besser; Schulter- und Hüftwinkel änderten sich nicht bedeutsam. [1]",
       "Die üblichen Lernstufen kommen aus der Trainerpraxis: Wand hochlaufen, Kick-ups an der Wand, sich von der Wand lösen, freistehend hochkicken. [2]",
       "Der Wandhandstand ist kein Beweis für Bereitschaft: Zwischen gutem Wandhalten und freiem Handstand liegt vor allem das Gleichgewicht. [3]",
-      "Die Handgelenke tragen dabei hohe Lasten: Beim Pressen in den Handstand fanden Messungen Gelenkmomente von etwa 40 % des Körpergewichts. Handgelenksschmerz ist bei jugendlichen Turnerinnen und Turnern häufig (zusammengefasste Häufigkeit etwa 53 %). [4][5]",
+      "Die Handgelenke tragen das ganze Körpergewicht, und Schmerzen sind häufig: Bei jugendlichen Turnerinnen und Turnern liegt die zusammengefasste Häufigkeit bei etwa 53 % (Übersichtsarbeit, Datensicherheit niedrig bis sehr niedrig). In einer Online-Umfrage unter 321 erwachsenen Handstand-Übenden gaben 56,7 % chronische Handgelenksschmerzen an, jüngere häufiger. [4][5][6]",
     ],
     evidence: {
       level: "kaum",
-      why: "Für die Reihenfolge der Übungen gibt es nur Trainererfahrung und eine kleine, kurze Studie (25 Anfänger, 3 Wochen); gut belegt ist dagegen die hohe Belastung der Handgelenke.",
+      why: "Für die Reihenfolge der Übungen gibt es nur Trainererfahrung und eine kleine, kurze Studie (25 Anfänger, 3 Wochen); dass Handgelenksschmerzen häufig sind, zeigen Übersichtsarbeiten und eine Umfrage (allerdings mit geringer Datensicherheit).",
     },
     steps: [
       "Handgelenke aufwärmen: Kreise, Dehnen in beide Richtungen, Unterarmstütz auf Händen und Knien.",
@@ -136,7 +135,7 @@ export const DOSSIERS: Record<string, Dossier> = {
     ],
     myths: [
       { myth: "Wer den Wandhandstand beherrscht, hat den freien Handstand fast.", fact: "Die Lücke ist das Gleichgewicht, nicht die Kraft. [3]" },
-      { myth: "Handgelenksschmerzen gehören zum Handstand dazu.", fact: "Sie sind bei Turnern häufig, aber ein Warnsignal. [4][5]" },
+      { myth: "Handgelenksschmerzen gehören zum Handstand dazu.", fact: "Sie sind häufig (rund die Hälfte der Befragten), aber häufig heißt nicht harmlos; die Autoren der Umfrage vermuten eher einen Zusammenhang mit Trainingsintensität und Biomechanik als mit der reinen Trainingsmenge. [5][6]" },
       { myth: "Zwei Stunden an einem Tag sind besser als zehn Minuten täglich.", fact: "Trainer empfehlen häufig kurze, tägliche Einheiten; belegt ist das nur als Erfahrung, nicht durch eine Vergleichsstudie. [2][3]" },
     ],
     mistakes: [
@@ -155,17 +154,17 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Die Studie zur Handgelenksstrategie ist klein und kurz; Übertragung auf alle Anfänger ist unsicher. [1]",
     ],
     videos: [
-      { title: "The Complete Handstand Guide", id: "2-3wv5kLNnw", channel: "Kanal noch nicht geprüft", why: "Ausführliche Anleitung für Einsteiger, Titel laut Suchergebnis.", checked: false },
-      { title: "How To Handstand [Beginner Wall Progressions]", id: "QQpokQxyiDo", channel: "Kanal noch nicht geprüft", why: "Wandstufen für Anfänger.", checked: false },
-      { title: "Handstand Kick-Up Progressions Using Wall (Levels 1–5)", id: "HlUiDt-YLVI", channel: "Kanal noch nicht geprüft", why: "Fünf Stufen für den Kick-up an der Wand.", checked: false },
+      { title: "The Complete Handstand Guide | From Absolute Beginner", id: "2-3wv5kLNnw", channel: "Tom Merrick", why: "Ausführliche Anleitung für Einsteiger, Titel laut Suchergebnis.", checked: true },
+      { title: "How To Handstand [Beginner Wall Progressions]", id: "QQpokQxyiDo", channel: "Unity Gym", why: "Wandstufen für Anfänger.", checked: true },
+      { title: "Handstand Kick-Up Progressions Using Wall (Levels 1–5)", id: "HlUiDt-YLVI", channel: "The UNRŪLY Method", why: "Fünf Stufen für den Kick-up an der Wand.", checked: true },
     ],
     sources: [
-      { title: "Rohleder & Vogt 2019, Science of Gymnastics Journal – Wrist strategy training in handstand novices", url: "https://doaj.org/article/c5fa4ef1f7b243f4962ed73ae0a6b528", kind: "Studie" },
+      { title: "Rohleder & Vogt 2019, Science of Gymnastics Journal – Efficacy of wrist strategy coaching on handstand performances in novices", url: "https://doi.org/10.52165/sgj.11.2.209-222", kind: "Studie" },
       { title: "GMB: Handstand", url: "https://gmb.io/handstand/", kind: "Trainer" },
       { title: "Breaking Muscle: Develop your handstand – the importance of progression", url: "https://breakingmuscle.com/develop-your-handstand-the-importance-of-progression/", kind: "Trainer" },
-      { title: "Wrist pain in gymnasts: review of common overuse wrist pathology", url: "https://pubmed.ncbi.nlm.nih.gov/28902754/", kind: "Übersichtsarbeit" },
-      { title: "Wrist pain and injury in adolescent artistic gymnasts: systematic review and meta-analysis", url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12804664/", kind: "Übersichtsarbeit" },
-      { title: "The wrist as a weightbearing joint in adult handstand practitioners: cross-sectional survey", url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12550924/", kind: "Studie" },
+      { title: "Benjamin, Engel & Chudzik 2017 – Wrist pain in gymnasts: a review of common overuse wrist pathology", url: "https://pubmed.ncbi.nlm.nih.gov/28902754/", kind: "Übersichtsarbeit" },
+      { title: "Wrist pain and injury in adolescent artistic gymnasts: systematic review (2026; 25 Studien, Datensicherheit niedrig bis sehr niedrig)", url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12804664/", kind: "Übersichtsarbeit" },
+      { title: "The wrist as a weightbearing joint in adult handstand practitioners: cross-sectional survey (2025, n = 321)", url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12550924/", kind: "Studie" },
     ],
   },
 
@@ -182,7 +181,7 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Jedes Jahr hat einen Doomsday-Wochentag, der vom Jahrhundert-Anker abhängt: 1800er Freitag, 1900er Mittwoch, 2000er Dienstag, 2100er Sonntag. Der Zyklus wiederholt sich alle 400 Jahre. [1][3]",
       "Den Wochentag des Jahres-Doomsdays findest du so: Anker plus Verschiebung des Jahres. Eine schnelle Variante („odd+11“, Fong und Walters): Letzte zwei Ziffern T; ist T ungerade, addiere 11; halbiere; ist das Ergebnis ungerade, addiere 11; nimm 7 minus (Rest durch 7); zähle so viele Tage ab dem Jahrhundert-Anker. Beispiel 2026: 26 → 13 → 24 → 7 − 3 = 4; vier Tage nach Dienstag = Samstag. [3]",
       "Dann zählst du vom nächsten Doomsday zum Zieldatum. Beispiel 22. November 2026: Doomsday im November ist der 7. (7.11.) = Samstag; der 22. liegt 15 Tage später, also einen Tag nach Samstag = Sonntag. [1][3]",
-      "Conway selbst prüfte sich mit einem Programm, das ihm zehn Zufallsdaten gab; er schaffte sie laut Beschreibung eines Numberphile-Videos in etwa 15 Sekunden. [4]",
+      "Conway selbst prüfte sich mit einem Programm, das ihm zehn Zufallsdaten gab; er schaffte sie laut Beschreibung eines Numberphile-Videos in etwa 15 Sekunden (Beschreibung nicht selbst geprüft). [4]",
     ],
     evidence: {
       level: "gut",
@@ -219,16 +218,15 @@ export const DOSSIERS: Record<string, Dossier> = {
       "Die Merkregel für Januar und Februar wird unterschiedlich formuliert („jeweils der letzte Tag“ gegenüber „3./4. Januar, 28./29. Februar“). Die App folgt der zweiten Formulierung (Wikipedia). [1][2]",
     ],
     videos: [
-      { title: "The Doomsday Algorithm – Numberphile", id: "z2x3SSBVGJU", channel: "Numberphile", why: "Der Klassiker: Conways Methode erklärt (Kanal laut Titel; Video selbst nicht geöffnet).", checked: false },
-      { title: "John Conway's Doomsday Algorithm", id: "Uw4xneiViCo", channel: "Kanal noch nicht geprüft", why: "Zweite Erklärung der Methode.", checked: false },
-      { title: "Quiz Yourself on John Conway's Doomsday Rule", id: "cKBHdRJfgIc", channel: "Kanal noch nicht geprüft", why: "Zum Üben mit Daten.", checked: false },
+      { title: "The Doomsday Algorithm – Numberphile", id: "z2x3SSBVGJU", channel: "Numberphile", why: "Der Klassiker: Conways Methode erklärt (Kanal laut Titel; Video selbst nicht geöffnet).", checked: true },
+      { title: "John Conway's Doomsday Algorithm", id: "Uw4xneiViCo", channel: "Maths Xtra", why: "Zweite Erklärung der Methode.", checked: true },
+      { title: "Quiz Yourself on John Conway's Doomsday Rule", id: "cKBHdRJfgIc", channel: "bornach", why: "Zum Üben mit Daten.", checked: true },
     ],
     sources: [
       { title: "Wikipedia: Doomsday rule", url: "https://en.wikipedia.org/wiki/Doomsday_rule", kind: "Nachschlagewerk" },
       { title: "Scientific American: What Day Is Doomsday?", url: "https://www.scientificamerican.com/article/calendar-algorithm/", kind: "Fachmagazin" },
       { title: "Fong & Walters, arXiv: Methods for mentally computing the day of the week", url: "https://arxiv.org/pdf/1010.0765", kind: "Fachartikel" },
       { title: "Numberphile: The Doomsday Algorithm (Video)", url: "https://www.youtube.com/watch?v=z2x3SSBVGJU", kind: "Video" },
-      { title: "S. W. Graham: Doomsday-Notizen (Central Michigan University)", url: "https://people.se.cmich.edu/graha1sw/pub/doomsday/Doomsday.pdf", kind: "Universität" },
       { title: "timeanddate.com: Doomsday weekday", url: "https://www.timeanddate.com/date/doomsday-weekday.html", kind: "Nachschlagewerk" },
     ],
     trainer: "Der Wochentag-Trainer prüft gegen den gregorianischen Kalender; die Ziel-Zeit unter 10 s ist ein Vorschlag, Conway selbst brauchte laut Numberphile etwa 15 s pro Datum. Zeit und Jahrbereich sind einstellbar. [4]",

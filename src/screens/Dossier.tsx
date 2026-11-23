@@ -78,10 +78,11 @@ export function DossierView({ d, id }: { d: Dossier; id: string }) {
               <span>
                 <b>{v.title}</b>
                 <small>{v.channel} · {v.why}</small>
-                {!v.checked && <small className="dos-unchecked">Link aus Suchergebnis, Inhalt noch nicht geprüft</small>}
+                {!v.checked && <small className="dos-unchecked">Link aus Suchergebnis, noch nicht geprüft</small>}
               </span>
             </a>
           ))}
+          <p className="dos-date">Link, Titel und Kanal am 23. November 2026 bei YouTube bestätigt. Der Inhalt ist nach Titel und Beschreibung beurteilt, die Videos wurden nicht angesehen.</p>
         </Sec>
         <Sec title="Quellen" count={d.sources.length}>
           <ol className="dos-sources">

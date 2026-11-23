@@ -8,7 +8,7 @@ export const MORSE: Record<string, string> = {
   ".": ".-.-.-", ",": "--..--", "?": "..--..", "/": "-..-.", "=": "-...-",
 };
 
-/** Reihenfolge der Zeichen nach der Koch-Methode, wie sie z. B. LCWO verwendet. */
+/** Koch-Reihenfolge, an LCWO angelehnt (40 Lektionen = 41 Zeichen). Nicht Zeichen für Zeichen gegen LCWO geprüft: Die Lektionsliste ist nur nach Anmeldung sichtbar. */
 export const KOCH_ORDER = "KMURESNAPTLWI.JZ=FOY,VG5/Q92H38B?47C1D60X".split("");
 
 export const MORSE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");

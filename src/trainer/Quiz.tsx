@@ -188,7 +188,7 @@ const spell = (text: string) => text.split("").map((c) => `${c} ${dots(MORSE[c] 
 
 const MORSE_HOW: HowTo = {
   points: [
-    "Koch-Methode (Psychologe Ludwig Koch, 1930er): Du hörst die Zeichen von Anfang an schnell (hier 15 bis 25 Wörter pro Minute) und lernst zuerst nur zwei Zeichen. Ab 90 % richtig kommt das nächste dazu – in der Reihenfolge, die auch LCWO verwendet.",
+    "Koch-Methode (Psychologe Ludwig Koch, 1930er): Du hörst die Zeichen von Anfang an schnell (hier 15 bis 25 Wörter pro Minute) und lernst zuerst nur zwei Zeichen. Ab 90 % richtig kommt das nächste dazu – in einer Reihenfolge, die der von LCWO nachempfunden ist (LCWO hat 40 Lektionen, hier 41 Zeichen; die Lektionsliste dort ist nur nach Anmeldung einsehbar, deshalb nicht Zeichen für Zeichen geprüft).",
     "Farnsworth-Abstände: Die Zeichen selbst klingen im vollen Tempo, die Pausen dazwischen sind länger. So erkennst du den Klang eines Zeichens, statt Punkte zu zählen. Mit wachsendem Können das Gesamttempo erhöhen.",
     "Lerne nach Klang („di-dah“), nicht nach dem Bild aus Punkten und Strichen. Gehört wird in Fünfergruppen, wie bei echten Funkprüfungen.",
     "Tempo: Ein Wort entspricht dem Wort PARIS (50 Einheiten). Ein Punkt dauert 1,2 Sekunden geteilt durch das Tempo in Wörtern pro Minute, ein Strich drei Punkte.",
