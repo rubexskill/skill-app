@@ -37,6 +37,13 @@ import { DOSSIERS_ATMUNG } from "./dossiers-atmung";
 import { DOSSIERS_ATMUNG2 } from "./dossiers-atmung2";
 import { DOSSIERS_KOERPER } from "./dossiers-koerper";
 import { DOSSIERS_KOPF } from "./dossiers-kopf";
+import { DOSSIERS_TRICKS } from "./dossiers-tricks";
+import { DOSSIERS_NATUR } from "./dossiers-natur";
+import { DOSSIERS_MINDSET } from "./dossiers-mindset";
+import { DOSSIERS_MENSCHEN } from "./dossiers-menschen";
+import { DOSSIERS_KOPF2 } from "./dossiers-kopf2";
+import { DOSSIERS_KOERPER2 } from "./dossiers-koerper2";
+import { DOSSIERS_KOERPER3 } from "./dossiers-koerper3";
 import { DOSSIERS_KREATIV } from "./dossiers-kreativ";
 import { DOSSIERS_WISSEN } from "./dossiers-wissen";
 import { DOSSIERS_GEWOHNHEITEN } from "./dossiers-gewohnheiten";
@@ -47,6 +54,13 @@ export const DOSSIERS: Record<string, Dossier> = {
   ...DOSSIERS_ATMUNG2,
   ...DOSSIERS_KOERPER,
   ...DOSSIERS_KOPF,
+  ...DOSSIERS_TRICKS,
+  ...DOSSIERS_NATUR,
+  ...DOSSIERS_MINDSET,
+  ...DOSSIERS_MENSCHEN,
+  ...DOSSIERS_KOPF2,
+  ...DOSSIERS_KOERPER2,
+  ...DOSSIERS_KOERPER3,
   ...DOSSIERS_KREATIV,
   ...DOSSIERS_WISSEN,
   ...DOSSIERS_GEWOHNHEITEN,
