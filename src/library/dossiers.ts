@@ -50,6 +50,7 @@ import { DOSSIERS_KOERPER3 } from "./dossiers-koerper3";
 import { DOSSIERS_KREATIV } from "./dossiers-kreativ";
 import { DOSSIERS_WISSEN } from "./dossiers-wissen";
 import { DOSSIERS_WISSEN2 } from "./dossiers-wissen2";
+import { DOSSIERS_WISSEN3 } from "./dossiers-wissen3";
 import { DOSSIERS_KREATIV2 } from "./dossiers-kreativ2";
 import { DOSSIERS_GEWOHNHEITEN } from "./dossiers-gewohnheiten";
 import { DOSSIERS_PROJEKTE } from "./dossiers-projekte";
@@ -74,6 +75,7 @@ export const DOSSIERS: Record<string, Dossier> = {
   ...DOSSIERS_KREATIV,
   ...DOSSIERS_WISSEN,
   ...DOSSIERS_WISSEN2,
+  ...DOSSIERS_WISSEN3,
   ...DOSSIERS_KREATIV2,
   ...DOSSIERS_GEWOHNHEITEN,
   ...DOSSIERS_PROJEKTE,
