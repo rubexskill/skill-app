@@ -1,7 +1,7 @@
 // Wissens-Dossiers: recherchiert, mit Quellen. Schlüssel = Kurztitel des Skills.
 // Keine persönlichen Daten. Jede inhaltliche Aussage hat eine Quelle (src: Nummer in `sources`) oder ist als „Einordnung“/„Vorschlag“ gekennzeichnet.
 
-export type Evidence = "gut" | "teilweise" | "kaum";
+export type Evidence = "gut" | "teilweise" | "kaum" | "anleitung";
 
 export interface Dossier {
   /** Recherchedatum, z. B. „22. November 2026“ */
@@ -27,7 +27,7 @@ export interface Dossier {
   trainer?: string;
 }
 
-export const EVIDENCE_LABEL: Record<Evidence, string> = { gut: "Gut belegt", teilweise: "Teilweise belegt", kaum: "Kaum belegt" };
+export const EVIDENCE_LABEL: Record<Evidence, string> = { gut: "Gut belegt", teilweise: "Teilweise belegt", kaum: "Kaum belegt", anleitung: "Anleitung / Fachwissen (keine Studienlage)" };
 
 export const DATE = "23. November 2026";
 /** Recherchedatum der ersten drei Dossiers */
