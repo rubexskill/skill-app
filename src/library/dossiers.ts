@@ -20,6 +20,8 @@ export interface Dossier {
   conflicts: string[];
   /** checked = Link, Titel und Kanal über YouTube (oEmbed) bestätigt am 23.11.2026; Inhalt nur nach Titel beurteilt, Video nicht angesehen */
   videos: { title: string; id: string; channel: string; why: string; checked: boolean }[];
+  /** Hinweis, wenn weniger als drei geprüfte Videos vorliegen */
+  videoNote?: string;
   sources: { title: string; url: string; kind: string }[];
   /** Begründung der Trainer-Standardwerte */
   trainer?: string;
@@ -27,11 +29,16 @@ export interface Dossier {
 
 export const EVIDENCE_LABEL: Record<Evidence, string> = { gut: "Gut belegt", teilweise: "Teilweise belegt", kaum: "Kaum belegt" };
 
-const DATE = "22. November 2026";
+export const DATE = "23. November 2026";
+/** Recherchedatum der ersten drei Dossiers */
+const DATE_1 = "22. November 2026";
+
+import { DOSSIERS_ATMUNG } from "./dossiers-atmung";
 
 export const DOSSIERS: Record<string, Dossier> = {
+  ...DOSSIERS_ATMUNG,
   "Box Breathing": {
-    date: DATE,
+    date: DATE_1,
     steckbrief: {
       about: "Gleichmäßiges Atmen in vier gleich langen Phasen: einatmen, halten, ausatmen, halten – üblich sind je 4 Sekunden. Kurzfristig kann es beruhigen; eine Behandlung ist es nicht.",
       why: "Eine einfache Übung für Stressmomente, die überall geht. In einer Studie mit 111 Personen sank die Angst mit Box Breathing ähnlich stark wie mit Achtsamkeitsmeditation; bei der Stimmung schnitt eine andere Atemübung (Cyclic Sighing) besser ab.",
@@ -101,7 +108,7 @@ export const DOSSIERS: Record<string, Dossier> = {
   },
 
   "Handstand halten": {
-    date: DATE,
+    date: DATE_1,
     steckbrief: {
       about: "Den Handstand frei und stabil halten – erst an der Wand, dann ohne. Das Gleichgewicht kommt vor allem aus den Händen und Handgelenken; Schultern und Rumpf geben die Stabilität.",
       why: "Stärkt Schultern und Rumpf und schult das Gleichgewicht. Eine kleine Studie mit Anfängern zeigte nach drei Wochen gezieltem Handgelenks-Training bessere Haltezeiten.",
@@ -169,7 +176,7 @@ export const DOSSIERS: Record<string, Dossier> = {
   },
 
   "Wochentag berechnen": {
-    date: DATE,
+    date: DATE_1,
     steckbrief: {
       about: "Den Wochentag zu jedem Datum im Kopf berechnen, mit der Doomsday-Methode von John Conway (1973). Sie nutzt Tage, die in jedem Jahr auf denselben Wochentag fallen.",
       why: "Ein überprüfbarer Kopfrechen-Trick: Das Verfahren ist mathematisch exakt für den gregorianischen Kalender und kommt mit kleinen Zahlen und Modulo 7 aus.",

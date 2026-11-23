@@ -71,7 +71,7 @@ export function DossierView({ d, id }: { d: Dossier; id: string }) {
             <p><Cited text={d.trainer} id={id} /></p>
           </Sec>
         )}
-        <Sec title="Videos" count={d.videos.length}>
+        {(d.videos.length > 0 || d.videoNote) && <Sec title="Videos" count={d.videos.length}>
           {d.videos.map((v) => (
             <a key={v.id} className="dos-video" href={`https://www.youtube.com/watch?v=${v.id}`} target="_blank" rel="noopener noreferrer">
               <Icon name="video" size={20} />
@@ -82,8 +82,9 @@ export function DossierView({ d, id }: { d: Dossier; id: string }) {
               </span>
             </a>
           ))}
-          <p className="dos-date">Link, Titel und Kanal am 23. November 2026 bei YouTube bestätigt. Der Inhalt ist nach Titel und Beschreibung beurteilt, die Videos wurden nicht angesehen.</p>
-        </Sec>
+          {d.videoNote && <p className="dos-date">{d.videoNote}</p>}
+          {d.videos.length > 0 && <p className="dos-date">Link, Titel und Kanal bei YouTube bestätigt. Der Inhalt ist nach Titel und Beschreibung beurteilt, die Videos wurden nicht angesehen.</p>}
+        </Sec>}
         <Sec title="Quellen" count={d.sources.length}>
           <ol className="dos-sources">
             {d.sources.map((s, i) => (
