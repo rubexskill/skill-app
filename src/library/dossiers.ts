@@ -42,6 +42,9 @@ import { DOSSIERS_NATUR } from "./dossiers-natur";
 import { DOSSIERS_MINDSET } from "./dossiers-mindset";
 import { DOSSIERS_MENSCHEN } from "./dossiers-menschen";
 import { DOSSIERS_KOPF2 } from "./dossiers-kopf2";
+import { DOSSIERS_KOPF3 } from "./dossiers-kopf3";
+import { DOSSIERS_MENSCHEN2 } from "./dossiers-menschen2";
+import { DOSSIERS_TRICKS2 } from "./dossiers-tricks2";
 import { DOSSIERS_KOERPER2 } from "./dossiers-koerper2";
 import { DOSSIERS_KOERPER3 } from "./dossiers-koerper3";
 import { DOSSIERS_KREATIV } from "./dossiers-kreativ";
@@ -61,6 +64,9 @@ export const DOSSIERS: Record<string, Dossier> = {
   ...DOSSIERS_MINDSET,
   ...DOSSIERS_MENSCHEN,
   ...DOSSIERS_KOPF2,
+  ...DOSSIERS_KOPF3,
+  ...DOSSIERS_MENSCHEN2,
+  ...DOSSIERS_TRICKS2,
   ...DOSSIERS_KOERPER2,
   ...DOSSIERS_KOERPER3,
   ...DOSSIERS_KREATIV,
