@@ -160,6 +160,29 @@ async function run() {
       // zurückschieben
       await page.mouse.move(10, 10);
     }
+    // To-dos „Alle“: gemeinsame Übersicht, Datum zuerst, Herkunft pro Zeile
+    const heads = await page.locator(".all-card .todo-sub").allTextContents();
+    if (!heads.length || !/^Überfällig/.test(heads[0]) || !/^Heute/.test(heads[1] ?? "") || /Allgemein/.test(heads.join())) failures.push(`${width}px · Alle-Abschnitte: ${JSON.stringify(heads)}`);
+    const nCards = await page.locator(".todo-card").count();
+    if (nCards !== 1) failures.push(`${width}px · Alle zeigt ${nCards} Karten statt einer`);
+    const origins = await page.locator(".all-card .todo-origin").count();
+    if (origins < 5) failures.push(`${width}px · Herkunft je Zeile fehlt (${origins})`);
+    await check("To-dos Alle");
+    await page.locator(".pill.list-chip", { hasText: "Schule" }).first().click(); await page.waitForTimeout(400);
+    if (await page.locator(".all-card").count()) failures.push(`${width}px · Reiter Schule zeigt noch Alle`);
+    await check("To-dos Schule");
+    // Suche: alle Listen, Treffer markiert, Reiter bleibt
+    await page.locator('button[aria-label="To-dos durchsuchen"]:visible').first().click(); await page.waitForTimeout(400);
+    await page.locator(".todo-search input").fill("kurz"); await page.waitForTimeout(400);
+    const res = await page.evaluate(() => ({ rows: document.querySelectorAll(".todo-card .todo-row").length, marks: document.querySelectorAll("mark.hit").length, tab: document.querySelector(".list-chip.is-on")?.textContent }));
+    if (res.rows < 2 || res.marks < 2 || !/Schule/.test(res.tab ?? "")) failures.push(`${width}px · Suche: ${JSON.stringify(res)}`);
+    await check("To-dos Suche");
+    await page.locator(".todo-search input").fill("qqqq"); await page.waitForTimeout(300);
+    if (!(await page.locator(".search-empty").count())) failures.push(`${width}px · Suche ohne Treffer: Hinweis fehlt`);
+    await check("To-dos Suche leer");
+    await page.locator(".todo-search-x").click(); await page.waitForTimeout(300);
+    if (await page.locator(".todo-search").count() || !/Schule/.test(await page.locator(".list-chip.is-on").textContent())) failures.push(`${width}px · Suche schließen verliert Reiter`);
+    await page.locator(".pill.list-chip", { hasText: "Alle" }).first().click(); await page.waitForTimeout(300);
     await tab("Inbox"); await page.waitForTimeout(500); await check("Inbox");
     await tab("Mehr"); await page.waitForTimeout(500); await check("Mehr");
     await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Mehr unten");

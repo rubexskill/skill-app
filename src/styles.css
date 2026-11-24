@@ -1721,3 +1721,14 @@ html.has-player, html.has-player body { overscroll-behavior: none; }
 .crop-frame { position: relative; width: min(100%, 320px); aspect-ratio: 1; margin: 0 auto; overflow: hidden; border-radius: 14px; background: color-mix(in srgb, var(--label) 10%, transparent); touch-action: none; }
 .crop-frame img { position: absolute; max-width: none; pointer-events: none; }
 .crop-zoom { width: min(100%, 320px); margin: 0 auto; }
+
+/* ---- To-dos: Übersicht „Alle“ und Suche ---- */
+.todo-sub-date { margin-left: 8px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--label-3); }
+.todo-origin { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--label-2); overflow-wrap: anywhere; }
+.todo-origin .chip-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.todo-search { display: flex; align-items: center; gap: 8px; min-height: 40px; margin-bottom: var(--gap, 14px); padding: 0 6px 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--label) 8%, transparent); color: var(--label-2); }
+.todo-search input { flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; font-size: 17px; color: var(--label); -webkit-appearance: none; appearance: none; }
+.todo-search input::-webkit-search-cancel-button { display: none; }
+.todo-search-x { flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; color: var(--label-3); display: grid; place-items: center; }
+.search-empty { padding: 40px 20px; text-align: center; color: var(--label-2); font-size: 15px; overflow-wrap: anywhere; }
+mark.hit { background: color-mix(in srgb, var(--accent) 24%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }

@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type Todo } from "../db";
-import { addDays, addTodo, normalize, dayKey, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
+import { addDays, addTodo, normalize, dayKey, longDate, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
 import { parseQuickTodo, todoBucket, type TodoBucket } from "../quickparse";
 import { catVars } from "../categories";
 import { Ring } from "./parts";
+import { groupAll, originLabel, searchTodos, splitHits, subjectOf as subjectParts } from "../todoview";
 import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
 import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -60,6 +61,10 @@ export function Todos() {
   const [showDoneIn, setShowDoneIn] = useState<Set<string>>(new Set());
   const [only, setOnly] = useState(false);
   const { completing, complete } = useCompleting();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searching = searchOpen && query.trim().length > 0;
+  const closeSearch = () => { setSearchOpen(false); setQuery(""); };
 
   const setListId = (id: string) => {
     setListIdState(id);
@@ -106,12 +111,14 @@ export function Todos() {
   };
 
   /** In der Liste „Schule“ steht das Fach vor dem Doppelpunkt: „Mathe: Aufgaben 3“. */
-  const subjectOf = (t: Todo) => {
-    const m = /^([^:\n]{2,24}):\s+(\S.*)$/.exec(t.text);
-    return m ? { subject: m[1].trim(), text: m[2] } : { subject: "", text: t.text };
-  };
+  const subjectOf = (t: Todo) => subjectParts(t.text);
 
-  const row = (t: Todo, shown = t.text) => {
+  const hl = (text: string): React.ReactNode =>
+    searching ? splitHits(text, query).map((p, i) => (p.hit ? <mark key={i} className="hit">{p.s}</mark> : <Fragment key={i}>{p.s}</Fragment>)) : text;
+
+  const row = (t: Todo, shown: string = t.text, opts: { origin?: boolean; hideDue?: boolean } = {}) => {
+    const lst = opts.origin ? lists?.find((l) => l.id === t.listId) : undefined;
+    const origin = lst ? originLabel(t, lst) : "";
     const isOn = t.done || completing.has(t.id);
     const overdue = !t.done && !!t.due && t.due < today;
     const isToday = !t.done && t.due === today;
@@ -119,8 +126,9 @@ export function Todos() {
       <SwipeRow key={t.id}
         leading={t.done ? { label: "Offen", tone: "gray", onClick: () => void setTodoDone(t.id, false) } : { label: "Erledigt", tone: "ok", onClick: () => complete(t.id) }}
         actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }, ...(t.done ? [] : [{ label: "Verschieben", tone: "gray" as const, onClick: () => reschedule(t) }])]}>
-        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{shown}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
-          detail={t.due && !t.done ? <span className={`todo-due${overdue ? " is-overdue" : isToday ? " is-today" : ""}`}>{dueLabel(t.due)}</span> : undefined}
+        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{hl(shown)}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
+          subtitle={origin ? <span className="todo-origin cv" style={listStyle(t.listId, lists)}><i className="chip-dot" />{hl(origin)}</span> : undefined}
+          detail={t.due && !t.done && !opts.hideDue ? <span className={`todo-due${overdue ? " is-overdue" : isToday ? " is-today" : ""}`}>{dueLabel(t.due)}</span> : undefined}
           leading={<CheckCircle checked={isOn} label={t.text} onToggle={() => (t.done ? void setTodoDone(t.id, false) : complete(t.id))} />}
           onClick={() => setEditing(t)} />
       </SwipeRow>
@@ -174,10 +182,44 @@ export function Todos() {
     );
   };
 
+  /** „Alle“: eine gemeinsame Übersicht über alle Listen, Einträge mit Datum zuerst. */
+  const allView = () => {
+    const base = (todos ?? []).filter((t) => !only || t.unsorted);
+    const groups = groupAll(base);
+    if (groups.length === 0) return <Group className="is-card todo-card"><div className="todo-empty">Nichts offen.</div></Group>;
+    return (
+      <Group className="is-card todo-card all-card">
+        {groups.map((g) => {
+          const stamp = g.key === "today" ? longDate(new Date()) : g.key === "tomorrow" ? longDate(addDays(new Date(), 1)) : "";
+          return (
+            <Fragment key={g.key}>
+              <div className={`todo-sub${g.key === "overdue" ? " is-overdue" : ""}`}>{g.title}{stamp && <span className="todo-sub-date">{stamp}</span>}</div>
+              {g.items.map((t) => row(t, subjectOf(t).subject && normalize(listName(t.listId)) === "schule" ? subjectOf(t).text : t.text, { origin: true, hideDue: g.key === "today" || g.key === "tomorrow" || g.key === "none" }))}
+            </Fragment>
+          );
+        })}
+      </Group>
+    );
+  };
+
+  const results = useMemo(() => (searching && todos && lists ? searchTodos(todos, lists, query) : []), [searching, todos, lists, query]);
+
+  const searchView = () =>
+    results.length === 0 ? (
+      <div className="search-empty">Nichts gefunden für „{query.trim()}“.</div>
+    ) : (
+      <Group className="is-card todo-card" footer={`${results.length === 1 ? "1 Treffer" : `${results.length} Treffer`} in allen Listen`}>
+        {results.map((t) => row(t, t.text, { origin: true }))}
+      </Group>
+    );
+
   const count = (id: string) => (todos ?? []).filter((t) => !t.done && (id === ALL_LISTS || t.listId === id)).length;
 
   return (
-    <NavPage title="To-dos" trailing={<NavButton icon="todo" label="Listen bearbeiten" onClick={() => setListsOpen(true)} />}
+    <NavPage title="To-dos" trailing={<>
+      <NavButton icon="search" label="To-dos durchsuchen" onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} />
+      <NavButton icon="todo" label="Listen bearbeiten" onClick={() => setListsOpen(true)} />
+    </>}
       header={
         <div className="list-pills">
           {[{ id: ALL_LISTS, name: "Alle" }, ...(lists ?? [])].map((l) => (
@@ -191,8 +233,15 @@ export function Todos() {
           <button className="pill pill-add" onClick={() => setListsOpen(true)} aria-label="Liste hinzufügen"><Icon name="plus" size={15} /></button>
         </div>
       }>
-      <TidyStrip kinds={["todo"]} only={only} onToggle={setOnly} />
-      <Group className="is-card compose-card" footer={parsed && (parsed.due || parsed.listId) ? (
+      {searchOpen && (
+        <div className="todo-search" role="search">
+          <Icon name="search" size={16} />
+          <input autoFocus type="search" value={query} placeholder="Titel, Notiz oder Liste" aria-label="To-dos durchsuchen" enterKeyHint="search" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && closeSearch()} />
+          <button className="todo-search-x" aria-label="Suche schließen" onClick={closeSearch}><Icon name="close" size={14} /></button>
+        </div>
+      )}
+      {!searching && <TidyStrip kinds={["todo"]} only={only} onToggle={setOnly} />}
+      {!searching && <Group className="is-card compose-card" footer={parsed && (parsed.due || parsed.listId) ? (
         <span className="quick-hint">
           {parsed.due ? dueLabel(parsed.due) : ""}{parsed.due && parsed.listId ? " · " : ""}{parsed.listId ? `Liste „${listName(parsed.listId)}“` : ""}
         </span>
@@ -214,9 +263,9 @@ export function Todos() {
             </label>
           </div>
         )}
-      </Group>
+      </Group>}
 
-      {todos && lists && (listId === ALL_LISTS ? lists : lists.filter((l) => l.id === listId)).map(listCard)}
+      {todos && lists && (searching ? searchView() : listId === ALL_LISTS ? allView() : lists.filter((l) => l.id === listId).map(listCard))}
       {todos && lists && lists.length === 0 && <EmptyState icon="todo" title="Keine Listen" text="Lege über das Plus oben eine Liste an." />}
 
       <TodoSheet todo={editing} onClose={() => setEditing(null)} />
