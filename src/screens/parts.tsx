@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, STATUS_ICON, STATUS_LABEL, TYP_LABEL, type Skill, type Status } from "../db";
-import { bigTime, elapsedLabel, hoursLabel, minutesLabel } from "../logic";
+import { bigTime, dayLabel, elapsedLabel, hoursLabel, minutesLabel } from "../logic";
 import { Row } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { CategoryIcon, catVars, shortCategory } from "../categories";
@@ -127,3 +127,16 @@ export function CatBadge({ name }: { name: string }) {
     </span>
   );
 }
+
+const RATING_LABEL = { 1: "Zäh", 2: "Okay", 3: "Gut" } as const;
+
+/** Ruhiger Rückblick auf die letzte Session: Text, Bewertung, Datum klein. */
+export function NextNoteCard({ note }: { note: { text: string; rating: 1 | 2 | 3 | null; at: number } }) {
+  return (
+    <section className="next-note">
+      <p className="next-note-text">Zuletzt: {note.text}{note.rating ? ` · ${RATING_LABEL[note.rating]}` : ""}</p>
+      <div className="next-note-date">{dayLabel(note.at)}</div>
+    </section>
+  );
+}
+

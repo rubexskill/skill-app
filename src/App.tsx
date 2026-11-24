@@ -14,6 +14,7 @@ import { SkillList } from "./screens/SkillList";
 import { Today } from "./screens/Today";
 import { Todos, useOpenTodoCount } from "./screens/Todos";
 import { Inbox } from "./screens/Inbox";
+import { PartPage, UnitPage } from "./screens/Units";
 import { Apps, More } from "./screens/More";
 import { Habits } from "./screens/Habits";
 import { ProjectDetail, Projects } from "./screens/Projects";
@@ -57,6 +58,10 @@ function renderRoute(r: KeyedRoute): ReactNode {
       return <SkillDetail id={r.id} />;
     case "project":
       return <ProjectDetail id={r.id} />;
+    case "unit":
+      return <UnitPage id={r.id} />;
+    case "part":
+      return <PartPage id={r.id} />;
     case "category":
       return <SkillList category={r.name} />;
     case "section":
@@ -125,7 +130,7 @@ function PhoneShell() {
 
   const current = stacks[tab] ?? [];
   const top = current[current.length - 1];
-  const showMini = !!running && !(top?.type === "skill" && top.id === running.id);
+  const showMini = !!running && !(top?.type === "skill" && top.id === running.id) && !(top?.type === "unit" && top.id === running.timerUnit);
 
   return (
     <div className="app-shell">

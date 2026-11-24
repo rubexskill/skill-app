@@ -5,6 +5,8 @@ export type Section = "overview" | "heute" | "todos" | "inbox" | "gewohnheiten" 
 export type Route =
   | { type: "skill"; id: string }
   | { type: "project"; id: string }
+  | { type: "unit"; id: string }
+  | { type: "part"; id: string }
   | { type: "category"; name: string }
   | { type: "section"; id: Section }
   | { type: "apps" };

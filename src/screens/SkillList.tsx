@@ -77,6 +77,13 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
       header={
         <div className="list-tools">
           <SearchField value={query} onChange={setQuery} />
+          <div className="filter-chips" role="group" aria-label="Status">
+            <button className={`mini-pill${!filterActive && !onlyUnsorted ? " is-on" : ""}`} aria-pressed={!filterActive && !onlyUnsorted}
+              onClick={() => { setStatusF(new Set()); setTypF(new Set()); setOnlyUnsorted(false); }}>Alle</button>
+            {STATUSES.map((st) => (
+              <button key={st} className={`mini-pill${statusF.has(st) ? " is-on" : ""}`} aria-pressed={statusF.has(st)} onClick={() => setStatusF((p) => toggleIn(p, st))}>{STATUS_LABEL[st]}</button>
+            ))}
+          </div>
           <div style={{ height: 10 }} />
           <TidyStrip kinds={["skill", "gewohnheit", "projekt"]} ids={(skills ?? []).filter((s) => s.unsorted).map((s) => s.id)} only={onlyUnsorted} onToggle={setOnlyUnsorted} />
           {filterActive && (
@@ -106,6 +113,10 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
       <Sheet open={filterOpen} onClose={() => setFilterOpen(false)} title="Filter" cancelLabel="Zurücksetzen"
         onCancel={() => { setStatusF(new Set()); setTypF(new Set()); }}
         action={{ label: "Fertig", onClick: () => setFilterOpen(false) }}>
+        <Group>
+          <Row title="Alle" onClick={() => { setStatusF(new Set()); setTypF(new Set()); }}
+            trailing={!filterActive ? <Icon name="check" size={18} className="row-check" /> : undefined} />
+        </Group>
         <Group header="Status">
           {STATUSES.map((s) => (
             <Row key={s} title={STATUS_LABEL[s]} onClick={() => setStatusF((p) => toggleIn(p, s))} leading={<StatusIcon status={s} />}

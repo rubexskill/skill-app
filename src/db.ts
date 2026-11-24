@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from "dexie";
 import { buildSeed, defaultLists, withDefaults } from "./seed";
 import { backfillUnsorted } from "./backfill";
+import { moveToFirstUnit } from "./unitsMigrate";
 
 // Interne Schlüssel bleiben wie in Version 1 (Backups bleiben kompatibel), die Anzeige ist neu.
 export type Status = "rausfinden" | "idee" | "lerne" | "kann";
@@ -78,6 +79,7 @@ export interface RecordEntry extends Synced {
   skillId: string;
   value: number;
   at: number;
+  unitId?: string;
 }
 
 export interface Skill extends Synced {
@@ -107,6 +109,10 @@ export interface Skill extends Synced {
   test: ExamTest | null;
   /** Aus der Inbox einsortiert, noch nicht aufgeräumt */
   unsorted?: boolean;
+  /** Unterpunkte („Stücke“) an: der Skill hat eigene Unterpunkte mit Abschnitten und Clips */
+  useUnits?: boolean;
+  /** Läuft der Timer für einen Unterpunkt, steht hier dessen id (Timer selbst: timerStart) */
+  timerUnit?: string | null;
 }
 
 export interface ExamQuestion {
@@ -146,6 +152,8 @@ export interface Session extends Synced {
   minutes: number;
   rating?: 1 | 2 | 3 | null;
   note?: string;
+  /** Session gehört zu einem Unterpunkt (Skill-Summe bleibt über skillId) */
+  unitId?: string;
 }
 
 export interface InboxItem extends Synced {
@@ -236,7 +244,70 @@ export interface Tomb {
   at: number;
 }
 
-export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards"] as const;
+export type UnitStatus = "lerne" | "kann" | "auffrischen";
+export const UNIT_STATUSES: UnitStatus[] = ["lerne", "auffrischen", "kann"];
+export const UNIT_STATUS_LABEL: Record<UnitStatus, string> = { lerne: "Lerne ich", auffrischen: "Auffrischen", kann: "Kann ich" };
+
+/** Unterpunkt eines Skills, z. B. ein Klavierstück. */
+export interface Unit extends Synced {
+  id: string;
+  skillId: string;
+  title: string;
+  status: UnitStatus;
+  note: string;
+  nextNote: NextNote | null;
+  order: number;
+  createdAt: number;
+}
+
+export interface PartNote {
+  id: string;
+  text: string;
+  at: number;
+}
+
+/** Metadaten eines Clips. Das Video selbst liegt nur lokal in `clipBlobs` (nie im Backup, nie online). */
+export interface ClipMeta {
+  id: string;
+  name: string;
+  size: number;
+  addedAt: number;
+  duration?: number;
+  /** Schleife von … bis … Sekunden */
+  start?: number;
+  end?: number;
+}
+
+/** Sollnoten für spätere Erkennung (noch ungenutzt): Tonhöhe als MIDI-Nummer, Abstand zum nächsten Ton in ms. */
+export interface NoteEvent {
+  midi: number;
+  gapMs: number;
+}
+
+/** Benannter Abschnitt eines Unterpunkts (z. B. „Strophe“, „Takt 12–16“). */
+export interface Part extends Synced {
+  id: string;
+  unitId: string;
+  name: string;
+  order: number;
+  /** „sitzt“ */
+  solid: boolean;
+  notes: PartNote[];
+  links: LinkItem[];
+  clips: ClipMeta[];
+  /** Wie oft die Clip-Schleife durchlief (Übungszähler) */
+  loops: number;
+  /** Vorbereitet für eine spätere Notenfolge */
+  sequence?: NoteEvent[];
+  createdAt: number;
+}
+
+export interface ClipBlob {
+  id: string;
+  blob: Blob;
+}
+
+export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts"] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 let hooksOff = false;
@@ -262,6 +333,9 @@ export class SkillDB extends Dexie {
   terms!: EntityTable<Term, "id">;
   wishes!: EntityTable<Wish, "id">;
   cards!: EntityTable<Card, "id">;
+  units!: EntityTable<Unit, "id">;
+  parts!: EntityTable<Part, "id">;
+  clipBlobs!: EntityTable<ClipBlob, "id">;
   tombs!: EntityTable<Tomb, "id">;
 
   constructor() {
@@ -321,6 +395,18 @@ export class SkillDB extends Dexie {
       .stores({})
       .upgrade(async (tx) => {
         await backfillUnsorted({ skills: tx.table("skills"), todos: tx.table("todos"), terms: tx.table("terms"), wishes: tx.table("wishes") });
+      });
+
+    // Version 6: Unterpunkte, Abschnitte, Clips. Bisherige Übezeit des Skills „Klavierstück“ wandert in den ersten Unterpunkt.
+    this.version(6)
+      .stores({
+        sessions: "id, skillId, start, unitId",
+        units: "id, skillId, createdAt",
+        parts: "id, unitId, order",
+        clipBlobs: "id",
+      })
+      .upgrade(async (tx) => {
+        await moveToFirstUnit({ skills: tx.table("skills"), sessions: tx.table("sessions"), records: tx.table("records"), units: tx.table("units") });
       });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.

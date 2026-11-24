@@ -23,7 +23,7 @@ export async function exportSync(): Promise<Blob> {
   const tables: Record<string, unknown[]> = {};
   for (const name of SYNC_TABLES) {
     const rows = (await db.table(name).toArray()) as Row[];
-    tables[name] = name === "skills" ? rows.map((s) => ({ ...s, timerStart: null })) : rows;
+    tables[name] = name === "skills" ? rows.map((s) => ({ ...s, timerStart: null, timerUnit: null })) : rows;
   }
   const data = { format: SYNC_FORMAT, version: 1, exportedAt: new Date().toISOString(), tables, tombs: await db.tombs.toArray() };
   return new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -79,7 +79,7 @@ const bump = (o: Partial<Record<SyncTable, number>>, k: SyncTable) => {
 };
 
 /** Tabellen mit Verweis auf einen Skill – verwaiste Zeilen werden nach dem Abgleich entfernt */
-const CHILDREN: SyncTable[] = ["sessions", "checks", "records", "cards"];
+const CHILDREN: SyncTable[] = ["sessions", "checks", "records", "cards", "units"];
 
 export async function applySync(p: ParsedSync): Promise<SyncReport> {
   const report: SyncReport = { added: {}, updated: {}, removed: {}, highlights: [], total: 0 };
@@ -110,11 +110,11 @@ export async function applySync(p: ParsedSync): Promise<SyncReport> {
           if (tomb && tomb.at >= remoteUpd) continue; // wurde danach gelöscht
           const cur = local.get(row.id);
           if (!cur) {
-            await table.put(name === "skills" ? { ...row, timerStart: null } : row);
+            await table.put(name === "skills" ? { ...row, timerStart: null, timerUnit: null } : row);
             bump(report.added, name);
             added.push({ table: name, row });
           } else if (remoteUpd > (cur.upd ?? 0) && content(row) !== content(cur)) {
-            await table.put(name === "skills" ? { ...row, timerStart: (cur as unknown as Skill).timerStart } : row);
+            await table.put(name === "skills" ? { ...row, timerStart: (cur as unknown as Skill).timerStart, timerUnit: (cur as unknown as Skill).timerUnit ?? null } : row);
             bump(report.updated, name);
           }
         }
@@ -141,6 +141,15 @@ export async function applySync(p: ParsedSync): Promise<SyncReport> {
           }
         }
       }
+      // Abschnitte gelöschter Unterpunkte
+      const unitIds = new Set((await db.units.toArray()).map((u) => u.id));
+      for (const part of await db.parts.toArray()) {
+        if (!unitIds.has(part.unitId)) {
+          await db.parts.delete(part.id);
+          await db.tombs.put({ id: `parts:${part.id}`, table: "parts", itemId: part.id, at: Date.now() });
+          bump(report.removed, "parts");
+        }
+      }
     });
   });
 
@@ -154,6 +163,8 @@ export async function applySync(p: ParsedSync): Promise<SyncReport> {
     else if (table === "terms") names.push(String(r.term));
     else if (table === "wishes" || table === "apps") names.push(String(r.name));
     else if (table === "cards") names.push(String(r.front));
+    else if (table === "units") names.push(String(r.title));
+    else if (table === "parts") names.push(String(r.name));
     else if (table === "sessions") names.push(`${titles.get(String(r.skillId)) ?? "Session"} · ${r.minutes} min`);
   }
   report.highlights = names;
@@ -174,6 +185,8 @@ const LABEL: Record<SyncTable, [string, string]> = {
   terms: ["Begriff", "Begriffe"],
   wishes: ["Wunsch", "Wünsche"],
   cards: ["Karteikarte", "Karteikarten"],
+  units: ["Unterpunkt", "Unterpunkte"],
+  parts: ["Abschnitt", "Abschnitte"],
 };
 
 /** „3 Sessions, 1 To-do“ */

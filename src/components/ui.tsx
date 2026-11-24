@@ -554,11 +554,12 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
 }
 
 /** Einklappbarer Abschnitt als Karte (Skill-Detail): zu, bis man ihn öffnet. */
-export function Fold({ title, summary, defaultOpen = false, children }: { title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+export function Fold({ title, summary, icon, defaultOpen = false, children }: { title: string; summary?: ReactNode; icon?: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={`fold${open ? " is-open" : ""}`}>
       <button className="fold-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {icon && <span className="fold-icon" aria-hidden="true"><Icon name={icon} size={17} /></span>}
         <span className="fold-title">{title}</span>
         {summary != null && summary !== "" && <span className="fold-summary">{summary}</span>}
         <Icon name="chevron-down" size={14} className="fold-chev" />

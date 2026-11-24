@@ -1,4 +1,4 @@
-import { db, uid, withoutHooks, type LinkItem, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ } from "./db";
+import { db, uid, withoutHooks, type LinkItem, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ, type Unit } from "./db";
 import { defaultLists, withDefaults } from "./seed";
 
 // ---------------- Zeit & Datum ----------------
@@ -97,43 +97,46 @@ export function startOfWeek(d = new Date()): Date {
 
 // ---------------- Timer ----------------
 
-export type StopResult = { skill: Skill; minutes: number; saved: boolean; sessionId: string | null };
+export type StopResult = { skill: Skill; minutes: number; saved: boolean; sessionId: string | null; unit?: Unit | null };
 
 export async function stopTimer(skillId: string): Promise<StopResult | null> {
-  return db.transaction("rw", db.skills, db.sessions, async () => {
+  return db.transaction("rw", db.skills, db.sessions, db.units, async () => {
     const skill = await db.skills.get(skillId);
     if (!skill?.timerStart) return null;
+    const unit = skill.timerUnit ? (await db.units.get(skill.timerUnit)) ?? null : null;
     const minutes = Math.round((Date.now() - skill.timerStart) / 60000);
     const saved = minutes >= 1;
     let sessionId: string | null = null;
     if (saved) {
       sessionId = uid();
-      const session: Session = { id: sessionId, skillId, start: skill.timerStart, minutes };
+      const session: Session = { id: sessionId, skillId, start: skill.timerStart, minutes, ...(unit ? { unitId: unit.id } : {}) };
       await db.sessions.add(session);
     }
-    await db.skills.update(skillId, { timerStart: null });
-    return { skill, minutes, saved, sessionId };
+    await db.skills.update(skillId, { timerStart: null, timerUnit: null });
+    return { skill, minutes, saved, sessionId, unit };
   });
 }
 
 /** Es läuft immer nur ein Timer – ein laufender wird vorher gestoppt. */
-export async function startTimer(skillId: string): Promise<StopResult | null> {
+export async function startTimer(skillId: string, unitId?: string): Promise<StopResult | null> {
   const running = await db.skills.filter((s) => s.timerStart != null && s.id !== skillId).toArray();
   let stopped: StopResult | null = null;
   for (const s of running) stopped = await stopTimer(s.id);
-  await db.skills.update(skillId, { timerStart: Date.now() });
+  await db.skills.update(skillId, { timerStart: Date.now(), timerUnit: unitId ?? null });
   return stopped;
 }
 
 export function stopMessage(r: StopResult): string {
-  return r.saved ? `${minutesLabel(r.minutes)} für „${r.skill.title}“ gespeichert` : "Unter 1 Minute – nicht gespeichert";
+  return r.saved ? `${minutesLabel(r.minutes)} für „${r.unit ? r.unit.title : r.skill.title}“ gespeichert` : "Unter 1 Minute – nicht gespeichert";
 }
 
 export async function saveSessionNote(r: StopResult, rating: 1 | 2 | 3 | null, text: string) {
   const note = text.trim();
   if (r.sessionId) await db.sessions.update(r.sessionId, { rating, note });
   if (note || rating) {
-    await db.skills.update(r.skill.id, { nextNote: note ? { text: note, rating, at: Date.now() } : null });
+    const next = note ? { text: note, rating, at: Date.now() } : null;
+    if (r.unit) await db.units.update(r.unit.id, { nextNote: next });
+    else await db.skills.update(r.skill.id, { nextNote: next });
   }
 }
 
@@ -169,20 +172,30 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
   const checks = await db.checks.where("skillId").equals(id).toArray();
   const records = await db.records.where("skillId").equals(id).toArray();
   const cards = await db.cards.where("skillId").equals(id).toArray();
-  await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records, db.cards], async () => {
+  const units = await db.units.where("skillId").equals(id).toArray();
+  const parts = (await Promise.all(units.map((u) => db.parts.where("unitId").equals(u.id).toArray()))).flat();
+  const blobs = (await db.clipBlobs.bulkGet(parts.flatMap((p) => p.clips.map((c) => c.id)))).filter((b): b is NonNullable<typeof b> => !!b);
+  const tables = [db.skills, db.sessions, db.checks, db.records, db.cards, db.units, db.parts, db.clipBlobs];
+  await db.transaction("rw", tables, async () => {
     await db.sessions.where("skillId").equals(id).delete();
     await db.checks.where("skillId").equals(id).delete();
     await db.records.where("skillId").equals(id).delete();
     await db.cards.where("skillId").equals(id).delete();
+    await db.parts.bulkDelete(parts.map((p) => p.id));
+    await db.clipBlobs.bulkDelete(blobs.map((b) => b.id));
+    await db.units.bulkDelete(units.map((u) => u.id));
     await db.skills.delete(id);
   });
   return async () => {
-    await db.transaction("rw", [db.skills, db.sessions, db.checks, db.records, db.cards], async () => {
+    await db.transaction("rw", tables, async () => {
       if (skill) await db.skills.put(skill);
       await db.sessions.bulkPut(sessions);
       await db.checks.bulkPut(checks);
       await db.records.bulkPut(records);
       await db.cards.bulkPut(cards);
+      await db.units.bulkPut(units);
+      await db.parts.bulkPut(parts);
+      await db.clipBlobs.bulkPut(blobs);
     });
   };
 }
@@ -340,7 +353,7 @@ const BACKUP_FORMAT = "skill-app-backup";
 export async function exportBackup(): Promise<Blob> {
   const data = {
     format: BACKUP_FORMAT,
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     skills: await db.skills.toArray(),
     sessions: await db.sessions.toArray(),
@@ -353,6 +366,9 @@ export async function exportBackup(): Promise<Blob> {
     terms: await db.terms.toArray(),
     wishes: await db.wishes.toArray(),
     cards: await db.cards.toArray(),
+    // Unterpunkte und Abschnitte samt Clip-Metadaten; die Videos selbst gehören nicht ins Backup
+    units: await db.units.toArray(),
+    parts: await db.parts.toArray(),
     tombs: await db.tombs.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -396,6 +412,8 @@ type Backup = {
   terms?: unknown[];
   wishes?: unknown[];
   cards?: unknown[];
+  units?: unknown[];
+  parts?: unknown[];
   tombs?: unknown[];
   exportedAt: string;
 };
@@ -408,7 +426,7 @@ export async function readBackup(file: File): Promise<Backup> {
 
 /** Ersetzt alle Daten. Backups aus Version 1 werden um die neuen Felder ergänzt. */
 export async function restoreBackup(data: Backup) {
-  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.tombs];
+  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.units, db.parts, db.tombs];
   // Fehlende Änderungszeit (alte Backups) aus dem Datum der Zeile schätzen
   const fix = <T,>(rows: unknown[] | undefined): T[] =>
     ((rows ?? []) as Record<string, number | undefined>[]).map((r) => (r.upd == null ? { ...r, upd: r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0 } : r)) as unknown as T[];
@@ -426,6 +444,8 @@ export async function restoreBackup(data: Backup) {
       await db.terms.bulkAdd(fix(data.terms));
       await db.wishes.bulkAdd(fix(data.wishes));
       await db.cards.bulkAdd(fix(data.cards));
+      await db.units.bulkAdd(fix(data.units));
+      await db.parts.bulkAdd(fix(data.parts));
       await db.tombs.bulkAdd((data.tombs ?? []) as never[]);
     }),
   );

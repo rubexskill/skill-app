@@ -122,6 +122,13 @@ export function Overview() {
 
       {cats.length > 0 && <h2 className="section-title">Kategorien</h2>}
       <div className="tiles">
+        {skills && skills.length > 0 && (
+          <button className="tile tile-all cv" onClick={() => nav.push({ type: "category", name: ALL })}>
+            <span className="tile-icon"><Icon name="stack" size={24} /></span>
+            <span className="tile-count">{skills.length}</span>
+            <span className="tile-name">Alle</span>
+          </button>
+        )}
         {cats.map(([name, count]) => (
           <button key={name} className="tile cv" style={catVars(name)} onClick={() => nav.push({ type: "category", name })}>
             <span className="tile-icon"><CategoryIcon name={name} size={24} /></span>

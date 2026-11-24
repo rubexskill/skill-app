@@ -6,8 +6,8 @@ import { Icon } from "./components/Icon";
 import { catVars } from "./categories";
 
 interface TimerCtx {
-  toggle: (skill: Skill) => Promise<void>;
-  start: (skill: Skill) => Promise<void>;
+  toggle: (skill: Skill, unitId?: string) => Promise<void>;
+  start: (skill: Skill, unitId?: string) => Promise<void>;
 }
 
 const Ctx = createContext<TimerCtx>({ toggle: async () => {}, start: async () => {} });
@@ -47,7 +47,7 @@ function StopSheet({ result, onClose }: { result: StopResult | null; onClose: ()
       {shown && (
         <div className="stop cv" style={catVars(shown.skill.kategorie)}>
           <div className="stop-time"><span className="num">{t.big}</span><span className="unit">{t.unit}</span></div>
-          <div className="stop-name">{shown.skill.title}</div>
+          <div className="stop-name">{shown.unit ? `${shown.unit.title} · ${shown.skill.title}` : shown.skill.title}</div>
 
           <div className="stop-label">Wie lief es?</div>
           <div className="rating">
@@ -84,18 +84,18 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   );
 
   const start = useCallback(
-    async (skill: Skill) => {
+    async (skill: Skill, unitId?: string) => {
       navigator.vibrate?.(10);
-      afterStop(await startTimer(skill.id));
+      afterStop(await startTimer(skill.id, unitId));
     },
     [afterStop],
   );
 
   const toggle = useCallback(
-    async (skill: Skill) => {
+    async (skill: Skill, unitId?: string) => {
       navigator.vibrate?.(10);
       if (skill.timerStart) afterStop(await stopTimer(skill.id));
-      else afterStop(await startTimer(skill.id));
+      else afterStop(await startTimer(skill.id, unitId));
     },
     [afterStop],
   );

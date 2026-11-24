@@ -1,6 +1,7 @@
 // Lokal: persönliche Startdaten aus src/seed/private. Online-Build: keine Startdaten. Bibliothek (Schätzwerte, Steckbriefe): src/library.
 import { APPS_MD as appsMd, SKILLS_MD as skillsMd } from "@seed-data";
 import { META_ROWS, PROFILES } from "./library";
+import { UNITS_DEFAULT_TITLE } from "./unitsMigrate";
 import type { AppIdea, Metric, Milestone, Movement, Place, Profile, Season, Session, Skill, Status, TodoList, Typ } from "./db";
 
 
@@ -74,6 +75,7 @@ export function withDefaults(s: Partial<Skill>): Skill {
     profile: s.profile !== undefined ? s.profile : pf?.profile ?? null,
     metric: s.metric !== undefined ? s.metric : pf?.metric ?? null,
     test: s.test ?? null,
+    useUnits: s.useUnits ?? (s.title ?? m?.title ?? s.name) === UNITS_DEFAULT_TITLE ? true : s.useUnits,
     ...(s.unsorted ? { unsorted: true } : {}),
     upd: s.upd,
   };

@@ -7,6 +7,7 @@ import { CheckCircle, Group, NavPage, Row, Segmented, SwipeRow, useUI } from "..
 import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
+import { clipStorage, exportClipFiles, importClipFiles, sizeLabel } from "../units";
 import { useTheme, type ThemeSetting } from "../theme";
 import { MarkdownImportSheet } from "./MdImport";
 import { SyncSheet } from "./Sync";
@@ -23,6 +24,8 @@ export function More() {
   const { toast, actionSheet } = useUI();
   const [theme, setTheme] = useTheme();
   const fileRef = useRef<HTMLInputElement>(null);
+  const clipsRef = useRef<HTMLInputElement>(null);
+  const clips = useLiveQuery(() => clipStorage(), []);
   const [mdOpen, setMdOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
@@ -44,6 +47,34 @@ export function More() {
     } catch {
       toast("Export fehlgeschlagen");
     }
+  };
+
+  const exportClips = async () => {
+    const files = await exportClipFiles();
+    if (!files.length) return toast("Keine Clips auf diesem Gerät.");
+    try {
+      if (navigator.canShare?.({ files })) {
+        await navigator.share({ files, title: "Skills-Clips" });
+        return;
+      }
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") return;
+    }
+    for (const f of files) {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement("a");
+      a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+    toast(`${files.length} Clip${files.length === 1 ? "" : "s"} heruntergeladen`);
+  };
+
+  const importClips = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    const r = await importClipFiles(files);
+    toast(r.matched ? `${r.matched} Clip${r.matched === 1 ? "" : "s"} wiederhergestellt${r.unmatched ? `, ${r.unmatched} nicht zuzuordnen` : ""}` : "Keine Datei passt zu einem Clip. Der Dateiname muss mit „skills-clip_“ beginnen.");
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,10 +136,15 @@ export function More() {
         <Row title="Backup exportieren" onClick={() => void doExport()} chevron leading={<span className="icon-tile tile-gray"><Icon name="share" size={17} /></span>} />
         <Row title="Backup importieren" onClick={() => fileRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />
       </Group>
+      <Group header="Clips" footer={clips ? `${clips.count} ${clips.count === 1 ? "Clip" : "Clips"}, ${sizeLabel(clips.clipBytes)}. Clips sind nicht im Backup und werden nicht zwischen Geräten abgeglichen. Der Export legt die Videos als einzelne Dateien ab; der Import ordnet sie über den Dateinamen wieder zu.` : undefined}>
+        <Row title="Clips exportieren" onClick={() => void exportClips()} chevron leading={<span className="icon-tile tile-gray"><Icon name="video" size={17} /></span>} />
+        <Row title="Clips importieren" onClick={() => clipsRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />
+      </Group>
       <MarkdownImportSheet open={mdOpen} onClose={() => setMdOpen(false)} />
       <SyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} />
       <ShortcutSheet open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
       <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void onFile(e)} />
+      <input ref={clipsRef} type="file" accept="video/*" multiple hidden onChange={(e) => void importClips(e)} />
 
       <Group header="Überblick">
         <Row title="Einträge" detail={stats?.skills ?? "–"} />

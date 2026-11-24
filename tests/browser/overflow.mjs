@@ -51,6 +51,17 @@ async function seed(page) {
     await db.wishes.add({ id: "w1", name: LONG, url: URL_LONG, note: LONG, bought: false, boughtAt: null, createdAt: Date.now() });
     for (let i = 0; i < 4; i++) await db.inbox.add({ id: "i" + i, text: LONG.repeat(2), createdAt: Date.now() - i * 86400000 });
     await db.sessions.add({ id: "se1", skillId: first.id, start: Date.now() - 3600000, minutes: 25, note: LONG });
+    // Klavierstück mit Unterpunkten, Abschnitten und Clip-Metadaten
+    const piano = await L.createSkill({ name: "Learn piano song", title: "Klavierstück", kategorie: "Kreativ & Alltag", typ: "skill", status: "lerne" });
+    await db.units.bulkAdd([
+      { id: "u1", skillId: piano.id, title: "Homecoming – Kanye West " + LONG, status: "lerne", note: LONG, nextNote: { text: LONG, rating: 2, at: Date.now() }, order: 0, createdAt: Date.now() },
+      { id: "u2", skillId: piano.id, title: "Zweites Stück", status: "auffrischen", note: "", nextNote: null, order: 1, createdAt: Date.now() },
+    ]);
+    await db.parts.bulkAdd([
+      { id: "p1", unitId: "u1", name: "Intro " + LONG, order: 0, solid: true, notes: [{ id: "n1", text: LONG, at: Date.now() }], links: [{ id: "pl", url: URL_LONG, title: LONG, addedAt: Date.now() }], clips: [{ id: "c1", name: LONG + ".mp4", size: 4200000, addedAt: Date.now(), duration: 12 }], loops: 7, createdAt: Date.now() },
+      { id: "p2", unitId: "u1", name: "Strophe", order: 1, solid: false, notes: [], links: [], clips: [], loops: 0, createdAt: Date.now() },
+    ]);
+    await db.sessions.add({ id: "se2", skillId: piano.id, start: Date.now() - 7200000, minutes: 30, unitId: "u1" });
     return first.id;
   }, [LONG, URL_LONG]);
 }
@@ -110,6 +121,17 @@ async function run() {
     };
     const tab = (n) => page.locator(".tabbar").getByText(n, { exact: true }).click();
     await tab("Übersicht"); await page.waitForTimeout(500); await check("Übersicht");
+    // Kachel „Alle“: an erster Stelle, zeigt die Anzahl aller Einträge, öffnet die ungefilterte Liste
+    const allTile = page.locator(".tiles .tile").first();
+    const tileInfo = await allTile.evaluate((el) => ({ name: el.querySelector(".tile-name").textContent, count: Number(el.querySelector(".tile-count").textContent), same: el.getBoundingClientRect().height }));
+    const total = await page.evaluate(() => window.db.skills.count());
+    const otherH = await page.locator(".tiles .tile").nth(1).evaluate((el) => el.getBoundingClientRect().height);
+    if (tileInfo.name !== "Alle" || tileInfo.count !== total || Math.abs(tileInfo.same - otherH) > 1) failures.push(`${width}px · Kachel Alle: ${JSON.stringify({ tileInfo, total, otherH })}`);
+    await allTile.click(); await page.waitForTimeout(700);
+    const chips = await page.locator(".filter-chips .mini-pill").evaluateAll((els) => els.map((e) => [e.textContent, e.classList.contains("is-on")]));
+    if (chips[0]?.[0] !== "Alle" || !chips[0][1]) failures.push(`${width}px · Chip Alle nicht vorn/aktiv: ${JSON.stringify(chips)}`);
+    await check("Alle-Liste");
+    await page.locator(".nav-back >> visible=true").last().click(); await page.waitForTimeout(650);
     await tab("Heute"); await page.waitForTimeout(500); await check("Heute");
     await tab("To-dos"); await page.waitForTimeout(500); await check("To-dos");
     // Wischen: Zeile bleibt in ihrer Karte, Seite bewegt sich nicht
@@ -138,7 +160,7 @@ async function run() {
     for (const n of ["Gewohnheiten", "Projekte", "Begriffe", "Wunschliste", "Statistik"]) {
       await click(page, n);
       await check(n);
-      await page.locator(".nav-back").first().click();
+      await page.locator(".nav-back >> visible=true").last().click();
       await page.waitForTimeout(650);
     }
     // Skill-Detail mit langem Steckbrief
@@ -153,6 +175,23 @@ async function run() {
     await check("Skill-Detail");
     await page.mouse.wheel(0, 1200); await page.waitForTimeout(300);
     await check("Skill-Detail unten");
+    // Klavierstück → Unterpunkt → Abschnitt
+    await page.locator(".nav-back >> visible=true").last().click(); await page.waitForTimeout(650);
+    await page.getByText("Klavierstück", { exact: true }).first().click({ timeout: 4000 });
+    await page.waitForTimeout(800);
+    await check("Klavierstück");
+    await page.locator(".unit-card").first().click(); await page.waitForTimeout(800);
+    await check("Unterpunkt");
+    await page.locator(".part-main").first().click(); await page.waitForTimeout(800);
+    await check("Abschnitt");
+    await page.locator(".nav-back >> visible=true").last().click(); await page.waitForTimeout(650);
+    await page.locator(".part-card .swipe-content").first().scrollIntoViewIfNeeded();
+    const pbox = await page.locator(".part-card .swipe-content").first().boundingBox();
+    await page.mouse.move(pbox.x + pbox.width / 2, pbox.y + pbox.height / 2); await page.mouse.down();
+    await page.mouse.move(pbox.x + pbox.width / 2 - 200, pbox.y + pbox.height / 2 + 1, { steps: 8 }); await page.waitForTimeout(150);
+    const swInfo = await page.evaluate(() => { const sc = [...document.querySelectorAll(".scroller")].find((x) => x.offsetParent !== null && x.querySelector(".part-card")); const card = document.querySelector(".part-card").getBoundingClientRect(); const a = [...document.querySelectorAll(".part-card .swipe-actions")].map((x) => x.getBoundingClientRect())[0]; return { left: sc.scrollLeft, outside: a ? a.right > card.right + 1 : false }; });
+    if (swInfo.left !== 0 || swInfo.outside) failures.push(`${width}px · Abschnitt gewischt: ${JSON.stringify(swInfo)}`);
+    await page.mouse.up();
     await context.close();
   }
   await browser.close();

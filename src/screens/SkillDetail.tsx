@@ -5,17 +5,18 @@ import {
   type Movement, type Place, type Season, type Session, type Status, type Typ,
 } from "../db";
 import { bigTime, dailyMinutes, dayLabel, deleteSkill, elapsedLabel, hoursLabel, minutesLabel, timeLabel, updateSkill } from "../logic";
-import { AutoTextarea, Fold, Group, NavPage, Row, Segmented, SwipeRow, useNow, useUI } from "../components/ui";
+import { AutoTextarea, Fold, Group, NavPage, Row, Segmented, Switch, SwipeRow, useNow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { Heatmap } from "../components/Charts";
 import { useStack } from "../components/Stack";
 import { allCategoryColors, catVars, categoryStyle } from "../categories";
 import { useNav } from "../nav";
 import { useTimer } from "../timer";
-import { CatBadge, Ring } from "./parts";
+import { CatBadge, NextNoteCard, Ring } from "./parts";
 import { CategorySheet, LinkSheet, MaterialSheet, typOptions, useAllMaterials } from "./SkillSheets";
 import { MetricSheet, SessionSheet } from "./EditSheets";
 import { ProfileCard } from "./Profile";
+import { UnitsSection } from "./Units";
 import { dossierFor } from "./Dossier";
 import { TidyItemRows } from "./Tidy";
 import { MilestoneList } from "./Milestones";
@@ -28,7 +29,6 @@ import { TrainerSheet, builtInTrainer, useCardCounts } from "../trainer/Trainer"
 const SESSION_PREVIEW = 6;
 const EST_CHOICES = [30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3000, 6000, 12000];
 const UNIT_CHOICES = [5, 10, 15, 20, 30, 45, 60, 90, 120];
-const RATING_LABEL = { 1: "Zäh", 2: "Okay", 3: "Gut" } as const;
 
 const isVideo = (url: string) => /(youtube\.com|youtu\.be|vimeo\.com|tiktok\.com|twitch\.tv)/i.test(url);
 const host = (url: string) => {
@@ -182,20 +182,10 @@ function SkillPage({ id }: { id: string }) {
       <div className="cv detail" style={catVars(skill.kategorie)}>
         {!isSkill && skill.profile?.about && <p className="one-liner">{skill.profile.about}</p>}
 
-        {skill.nextNote && (
-          <section className="next-note">
-            <div className="next-note-head">
-              <Icon name="note" size={16} />
-              <span>Nächstes Mal</span>
-              <span className="next-note-date">{dayLabel(skill.nextNote.at)}{skill.nextNote.rating ? ` · ${RATING_LABEL[skill.nextNote.rating]}` : ""}</span>
-            </div>
-            <div className="next-note-text">{skill.nextNote.text}</div>
-            <button className="next-note-done" onClick={() => set({ nextNote: null })}>Erledigt</button>
-          </section>
-        )}
+        {skill.nextNote && <NextNoteCard note={skill.nextNote} />}
 
         <section className={`hero${running ? " is-running" : ""}`}>
-          <Ring value={ringValue} size={196} stroke={12} className="hero-ring">
+          <Ring value={ringValue} size={157} stroke={11} className="hero-ring">
             {running ? (
               <>
                 <div className="hero-num">{elapsedLabel(elapsedMs)}</div>
@@ -221,30 +211,32 @@ function SkillPage({ id }: { id: string }) {
           )}
         </section>
 
+        {skill.useUnits && <UnitsSection skill={skill} />}
+
         {isSkill && (
-          <Fold title="Steckbrief" summary={dossierFor(skill.title) && (!skill.profile || skill.profile.ai) ? "Recherchiert · mit Quellen" : ""}>
+          <Fold title="Steckbrief" icon="term" summary={dossierFor(skill.title) && (!skill.profile || skill.profile.ai) ? "Recherchiert · mit Quellen" : ""}>
             <ProfileCard skill={skill} />
           </Fold>
         )}
 
         {(isSkill || skill.milestones.length > 0) && (
-          <Fold title={isSkill ? "Meilensteine" : "Unterpunkte"} summary={skill.milestones.length ? `${skill.milestones.filter((m) => m.done).length} von ${skill.milestones.length}` : ""}>
+          <Fold title={isSkill ? "Meilensteine" : "Unterpunkte"} icon="checklist" summary={skill.milestones.length ? `${skill.milestones.filter((m) => m.done).length} von ${skill.milestones.length}` : ""}>
             <MilestoneList skill={skill} onAllDone={allDone} />
           </Fold>
         )}
 
         {isSkill && (
-          <Fold title="Abschlusstest" summary={skill.test ? "vorhanden" : ""}>
+          <Fold title="Abschlusstest" icon="exam" summary={skill.test ? "vorhanden" : ""}>
             <ExamGroup skill={skill} onPass={() => setStatus("kann")} />
           </Fold>
         )}
 
-        <Fold title="Rekorde" summary={skill.metric ? skill.metric.label : ""}>
+        <Fold title="Rekorde" icon="chart" summary={skill.metric ? skill.metric.label : ""}>
           <Records skill={skill} />
         </Fold>
 
           {isSkill && (
-        <Fold title="Karteikarten" summary={counts.total ? (counts.due ? `${counts.due} fällig` : `${counts.total}`) : ""}>
+        <Fold title="Karteikarten" icon="cards" summary={counts.total ? (counts.due ? `${counts.due} fällig` : `${counts.total}`) : ""}>
         <Group>
           <Row title="Karteikarten" subtitle={counts.total ? (counts.due ? `${counts.due} heute fällig` : "Heute nichts fällig") : "Eigene Karten zum Wiederholen anlegen"}
             detail={counts.total ? String(counts.total) : undefined} chevron onClick={() => setCardsOpen(true)}
@@ -257,7 +249,7 @@ function SkillPage({ id }: { id: string }) {
         {skill.unsorted && <Group><TidyItemRows kind="skill" id={skill.id} unsorted /></Group>}
 
 
-        <Fold title="Notizen" summary={notes.trim().split("\n")[0].slice(0, 40)}>
+        <Fold title="Notizen" icon="note" summary={notes.trim().split("\n")[0].slice(0, 40)}>
         <Group>
           <div className="row input-row">
             <AutoTextarea value={notes} placeholder="Gedanken, Ziele, Tipps …" onChange={(e) => onNotes(e.target.value)}
@@ -267,7 +259,7 @@ function SkillPage({ id }: { id: string }) {
 
         </Fold>
 
-        <Fold title="Links & Videos" summary={skill.links.length ? String(skill.links.length) : ""}>
+        <Fold title="Links & Videos" icon="link" summary={skill.links.length ? String(skill.links.length) : ""}>
         <Group>
           {skill.links.map((l) => (
             <SwipeRow key={l.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeLink(l.id) }]}>
@@ -281,7 +273,7 @@ function SkillPage({ id }: { id: string }) {
 
         </Fold>
 
-        <Fold title="Sessions" summary={count ? `${count} · ${minutesLabel(total)}` : ""}>
+        <Fold title="Sessions" icon="today" summary={count ? `${count} · ${minutesLabel(total)}` : ""}>
         <Group footer={count ? "Antippen zum Bearbeiten, nach links wischen zum Löschen." : undefined}>
           {count > 0 && <div className="row heatmap-row"><Heatmap days={days} weeks={16} compact /></div>}
           {visibleSessions.map((s) => (
@@ -298,7 +290,7 @@ function SkillPage({ id }: { id: string }) {
 
         </Fold>
 
-        <Fold title="Details bearbeiten">
+        <Fold title="Details bearbeiten" icon="more">
 
           <Group>
             <div className="row input-row labeled">
@@ -316,6 +308,9 @@ function SkillPage({ id }: { id: string }) {
             <div className="row segmented-row">
               <Segmented options={typOptions} value={skill.typ} onChange={(v: Typ) => set({ typ: v })} />
             </div>
+          </Group>
+          <Group footer="Mit Unterpunkten teilst du den Skill in Stücke mit eigenen Abschnitten, Notizen und Clips, z. B. bei Klavierstücken.">
+            <Row title="Unterpunkte" trailing={<Switch checked={!!skill.useUnits} onChange={(v) => set({ useUnits: v })} label="Unterpunkte" />} />
           </Group>
           <Group>
             <Row title="Kategorie" detail={skill.kategorie} chevron onClick={() => setCatOpen(true)} />
