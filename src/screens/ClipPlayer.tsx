@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { db, type ClipMeta, type Part } from "../db";
-import { addLoop, clipTitle, LOOP_SPEEDS, setClipRange } from "../units";
-import { clampRange, fmtTime, loopAction, onEnded } from "../clipLoop";
+import { addLoops, clipTitle, LOOP_SPEEDS, setClipRange } from "../units";
+import { clampRange, fmtTime, loopAction, loopEnd, wrapped } from "../clipLoop";
 import { Icon } from "../components/Icon";
 
 const HIDE_MS = 2000;
+const GHOST_MS = 350;
+const SAVE_MS = 5000;
+const PTR = ["click", "dblclick", "pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend"] as const;
 
-/** Vollbild-Player wie bei YouTube: schwarz, Video groß, Tippen = Pause/Play, Steuerung blendet sich nach 2 s aus. */
+/** Nach dem Schließen kurz alle Eingaben abfangen, damit kein „Geister-Klick“ die Seite dahinter trifft. */
+function blockGhostClicks() {
+  const stop = (e: Event) => { e.stopPropagation(); e.preventDefault(); };
+  PTR.forEach((n) => window.addEventListener(n, stop, true));
+  window.setTimeout(() => PTR.forEach((n) => window.removeEventListener(n, stop, true)), GHOST_MS);
+}
+
+/** Vollbild-Player: Erstes Tippen blendet nur die Steuerung ein, pausiert wird über den Mittelknopf. Zeit und Zähler laufen ohne React-Updates. */
 export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { open: boolean; onClose: () => void; part: Part; clip: ClipMeta | null; index: number; autoplay?: boolean }) {
   const [shown, setShown] = useState<ClipMeta | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -18,16 +28,31 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   const [ui, setUi] = useState(true);
   const [trim, setTrim] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [time, setTime] = useState(0);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [vis, setVis] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
+  const timeEl = useRef<HTMLSpanElement>(null);
+  const seekEl = useRef<HTMLInputElement>(null);
+  const countEl = useRef<HTMLDivElement>(null);
   const loopRef = useRef(loop); loopRef.current = loop;
   const rangeRef = useRef(range); rangeRef.current = range;
   const durRef = useRef(duration); durRef.current = duration;
-  const scrub = useRef(false);
-  const hide = useRef(0);
   const trimRef = useRef(trim); trimRef.current = trim;
+  const scrub = useRef(false);
+  const userSeek = useRef(0);
+  const hide = useRef(0);
+  const base = useRef(0);
+  const pending = useRef(0);
+  const total = useRef(0);
+
+  const showCount = useCallback(() => {
+    if (countEl.current) countEl.current.textContent = total.current > 0 ? `${total.current}× in der Schleife` : "";
+  }, []);
+  const flush = useCallback(() => {
+    const n = pending.current;
+    if (n > 0) { pending.current = 0; void addLoops(part.id, n); }
+  }, [part.id]);
+  const flushRef = useRef(flush); flushRef.current = flush;
 
   const poke = useCallback((keep = false) => {
     setUi(true);
@@ -43,7 +68,8 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
     let cancelled = false;
     setShown(clip); setAbsent(false); setPlaying(false); setUrl(null); setTrim(false); setUi(true);
     setRange([clip.start ?? 0, clip.end ?? clip.duration ?? 0]);
-    setDuration(clip.duration ?? 0); setTime(0);
+    setDuration(clip.duration ?? 0);
+    base.current = part.loops ?? 0; pending.current = 0; total.current = 0;
     requestAnimationFrame(() => requestAnimationFrame(() => setVis(true)));
     void db.clipBlobs.get(clip.id).then((b) => {
       if (cancelled) return;
@@ -51,14 +77,21 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
       obj = URL.createObjectURL(b.blob);
       setUrl(obj);
     });
-    return () => { cancelled = true; window.clearTimeout(hide.current); if (obj) URL.revokeObjectURL(obj); };
-  }, [open, clip?.id]);
+    return () => { cancelled = true; window.clearTimeout(hide.current); flushRef.current(); if (obj) URL.revokeObjectURL(obj); };
+  }, [open, clip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seite dahinter bleibt stehen
+  // Seite dahinter sperren
   useEffect(() => {
     if (!open) return;
     document.documentElement.classList.add("has-player");
     return () => document.documentElement.classList.remove("has-player");
+  }, [open]);
+
+  // Zähler gesammelt speichern
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setInterval(() => flushRef.current(), SAVE_MS);
+    return () => window.clearInterval(id);
   }, [open]);
 
   const apply = useCallback(() => {
@@ -70,7 +103,32 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   }, [speed]);
   useEffect(apply, [apply, url]);
 
-  const close = useCallback(() => { video.current?.pause(); onClose(); }, [onClose]);
+  // Ganzer Clip: natives Loop (nahtlos). Mit Ausschnitt übernimmt die Bildschirmschleife unten.
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    const [a, b] = range;
+    const partial = a > 0.05 || (duration > 0 && b > 0 && b < duration - 0.05);
+    v.loop = loop && !partial;
+  }, [loop, range, duration, url]);
+
+  const close = useCallback(() => {
+    video.current?.pause();
+    flushRef.current();
+    blockGhostClicks();
+    onClose();
+  }, [onClose]);
+
+  const toggle = useCallback(() => {
+    const v = video.current;
+    if (!v || absent) return;
+    if (v.paused) {
+      const [a, b] = rangeRef.current;
+      if (v.currentTime < a || v.currentTime >= (b || v.duration)) v.currentTime = a;
+      void v.play();
+    } else v.pause();
+    poke();
+  }, [absent, poke]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,7 +138,7 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [open, close, toggle]);
 
   const onMeta = () => {
     const v = video.current;
@@ -94,33 +152,39 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
     if (autoplay) void v.play().catch(() => undefined);
   };
 
-  const lap = () => {
-    const v = video.current;
-    if (!v) return;
-    v.currentTime = rangeRef.current[0];
-    void addLoop(part.id);
-    void v.play();
-  };
+  // Eine Schleife pro Bild: Ausschnitt-Ende prüfen und direkt zurückspringen (ohne pause/play); Zeit und Leiste höchstens 4× pro Sekunde
+  useEffect(() => {
+    if (!open || !url) return;
+    let raf = 0;
+    let lastPaint = 0;
+    let lastT = 0;
+    const tick = (now: number) => {
+      const v = video.current;
+      if (v) {
+        const t = v.currentTime;
+        const [a, b] = rangeRef.current;
+        const dur = v.duration || durRef.current;
+        const act = loopAction(t, loopEnd(a, b, dur), dur, loopRef.current);
+        let lapped = false;
+        if (act === "lap") { v.currentTime = a; lapped = true; }
+        else if (act === "stop") { v.pause(); v.currentTime = a; }
+        else if (v.loop && !v.paused && !scrub.current && now - userSeek.current > 600 && wrapped(lastT, t)) lapped = true;
+        if (lapped) { pending.current++; total.current++; showCount(); }
+        lastT = lapped ? a : t;
+        if (now - lastPaint > 250) {
+          lastPaint = now;
+          if (timeEl.current) timeEl.current.textContent = fmtTime(t);
+          if (seekEl.current && !scrub.current) seekEl.current.value = String(t);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [open, url, showCount]);
 
-  const onTime = () => {
-    const v = video.current;
-    if (!v) return;
-    if (!scrub.current) setTime(v.currentTime);
-    const act = loopAction(v.currentTime, rangeRef.current[1], v.duration || durRef.current, loopRef.current);
-    if (act === "lap") lap();
-    else if (act === "stop") { v.pause(); v.currentTime = rangeRef.current[0]; }
-  };
-
-  const toggle = () => {
-    const v = video.current;
-    if (!v || absent) return;
-    if (v.paused) {
-      const [a, b] = rangeRef.current;
-      if (v.currentTime < a || v.currentTime >= (b || v.duration)) v.currentTime = a;
-      void v.play();
-    } else v.pause();
-    poke();
-  };
+  // Zähler beim Öffnen anzeigen
+  useEffect(() => { if (open) { total.current = base.current; showCount(); } }, [open, clip?.id, showCount, url]);
 
   const saveRange = (r: [number, number]) => {
     if (!shown) return;
@@ -131,25 +195,31 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   if (!open || !clip) return null;
   const title = clipTitle(shown ?? clip, index);
   const showUi = ui || !playing || trim || absent;
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
   return createPortal(
-    <div className={`fsp${vis ? " is-shown" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={`fsp${vis ? " is-shown" : ""}`} role="dialog" aria-modal="true" aria-label={title}
+      onPointerDown={stop} onPointerUp={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop} onMouseDown={stop} onContextMenu={(e) => e.preventDefault()}>
       {absent ? (
         <p className="fsp-missing">Dieses Video liegt nicht auf diesem Gerät. Über Mehr → „Clips importieren“ lässt es sich wieder einspielen.</p>
       ) : (
-        <video ref={video} className="fsp-video" src={url ?? undefined} playsInline preload="auto" onLoadedMetadata={onMeta} onTimeUpdate={onTime}
-          onEnded={() => { if (onEnded(loopRef.current) === "lap") lap(); else setPlaying(false); }}
-          onPlay={() => { setPlaying(true); poke(); }} onPause={() => { setPlaying(false); setUi(true); window.clearTimeout(hide.current); }}
-          onClick={toggle} />
+        <video ref={video} className="fsp-video" src={url ?? undefined} playsInline preload="auto" disablePictureInPicture onLoadedMetadata={onMeta}
+          onEnded={() => setPlaying(false)}
+          onPlay={() => { setPlaying(true); poke(); }} onPause={() => { setPlaying(false); setUi(true); window.clearTimeout(hide.current); }} />
       )}
+      <div className="fsp-hit" onClick={() => { if (showUi && playing && !trim) { window.clearTimeout(hide.current); setUi(false); } else poke(); }} />
       <div className={`fsp-ui${showUi ? " is-on" : ""}`}>
         <div className="fsp-top">
-          <button className="fsp-btn fsp-x" onClick={close} aria-label="Schließen"><Icon name="close" size={22} /></button>
+          <button className="fsp-btn fsp-x" aria-label="Schließen"
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); close(); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); close(); } }}><Icon name="close" size={22} /></button>
           <div className="fsp-title">{title}</div>
-          {part.loops > 0 && <div className="fsp-count" aria-live="polite">{part.loops}× in der Schleife</div>}
+          <div className="fsp-count" ref={countEl} aria-live="off" />
         </div>
-        {!playing && !absent && (
-          <button className="fsp-center" onClick={toggle} aria-label="Abspielen"><Icon name="play" size={34} /></button>
+        {!absent && (
+          <button className="fsp-center" onClick={toggle} aria-label={playing ? "Pause" : "Abspielen"}><Icon name={playing ? "pause" : "play"} size={34} /></button>
         )}
         <div className="fsp-bottom" onPointerDown={() => poke(true)} onPointerUp={() => poke()}>
           {trim && duration > 0 && (
@@ -171,10 +241,10 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
             </div>
           )}
           <div className="fsp-seek">
-            <span>{fmtTime(time)}</span>
-            <input type="range" min={0} max={duration || 1} step={0.01} value={Math.min(time, duration || 1)} aria-label="Zeitleiste"
-              onPointerDown={() => { scrub.current = true; }}
-              onChange={(e) => { const t = Number(e.target.value); setTime(t); if (video.current) video.current.currentTime = t; }}
+            <span ref={timeEl}>0:00</span>
+            <input ref={seekEl} type="range" min={0} max={duration || 1} step={0.01} defaultValue={0} aria-label="Zeitleiste"
+              onPointerDown={() => { scrub.current = true; userSeek.current = performance.now(); }}
+              onInput={(e) => { const t = Number((e.target as HTMLInputElement).value); userSeek.current = performance.now(); if (timeEl.current) timeEl.current.textContent = fmtTime(t); if (video.current) video.current.currentTime = t; }}
               onPointerUp={() => { scrub.current = false; poke(); }} onKeyUp={() => { scrub.current = false; }} />
             <span>{fmtTime(duration)}</span>
           </div>

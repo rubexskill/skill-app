@@ -1,4 +1,4 @@
-import { db, uid, type ClipMeta, type Part, type PartNote, type Recording, type Unit, type UnitStatus } from "./db";
+import { db, uid, UNIT_STATUSES, type ClipMeta, type Part, type PartNote, type Recording, type Unit, type UnitStatus } from "./db";
 
 /** Unterpunkte („Stücke“), Abschnitte und Clips. Videos liegen nur lokal in IndexedDB (clipBlobs). */
 
@@ -147,6 +147,21 @@ export async function addLoop(partId: string) {
   await db.transaction("rw", db.parts, async () => {
     const part = await db.parts.get(partId);
     if (part) await db.parts.update(partId, { loops: (part.loops ?? 0) + 1 });
+  });
+}
+
+/** Reihenfolge der Stücke: „Lerne ich“, dann „Auffrischen“, dann „Kann ich“; innerhalb davon nach `order`. */
+export function sortUnits<T extends { status: UnitStatus; order: number; createdAt?: number }>(units: T[]): T[] {
+  const rank = (s: UnitStatus) => UNIT_STATUSES.indexOf(s);
+  return [...units].sort((a, b) => rank(a.status) - rank(b.status) || a.order - b.order || (a.createdAt ?? 0) - (b.createdAt ?? 0));
+}
+
+/** Mehrere Durchläufe auf einmal speichern (der Player sammelt sie). */
+export async function addLoops(partId: string, n: number) {
+  if (n <= 0) return;
+  await db.transaction("rw", db.parts, async () => {
+    const part = await db.parts.get(partId);
+    if (part) await db.parts.update(partId, { loops: (part.loops ?? 0) + n });
   });
 }
 
@@ -392,16 +407,17 @@ export async function removeRecordings(ids: string[]): Promise<() => Promise<voi
   };
 }
 
-export function defaultRecordingName(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `Aufnahme ${p(d.getDate())}.${p(d.getMonth() + 1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+/** Nächster Standardname im selben Stück bzw. Abschnitt: „Aufnahme 1“, „Aufnahme 2“ … */
+export function nextRecordingName(existing: { name: string }[]): string {
+  const max = existing.reduce((m, r) => Math.max(m, Number(/^Aufnahme (\d+)$/.exec(r.name)?.[1] ?? 0)), 0);
+  return `Aufnahme ${Math.max(max, existing.length) + 1}`;
 }
 
 export async function addRecording(input: { unitId: string; partId?: string | null; blob: Blob; duration: number; mime?: string }): Promise<Recording> {
   const at = Date.now();
+  const same = (await db.recordings.where("unitId").equals(input.unitId).toArray()).filter((r) => (r.partId ?? null) === (input.partId ?? null));
   const rec: Recording = {
-    id: uid(), unitId: input.unitId, ...(input.partId ? { partId: input.partId } : {}), name: defaultRecordingName(at), note: "", at,
+    id: uid(), unitId: input.unitId, ...(input.partId ? { partId: input.partId } : {}), name: nextRecordingName(same), note: "", at,
     duration: Math.max(0, Math.round(input.duration * 10) / 10), size: input.blob.size, mime: input.mime || input.blob.type || "audio/mp4",
   };
   await db.transaction("rw", [db.recordings, db.recBlobs], async () => {

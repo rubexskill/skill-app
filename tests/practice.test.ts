@@ -93,7 +93,7 @@ describe("Aufnahmen", () => {
     const { u, p } = await setup();
     const a = await addRecording({ unitId: u.id, partId: null, blob: audio(), duration: 12.34 });
     const b = await addRecording({ unitId: u.id, partId: p.id, blob: audio(500), duration: 4 });
-    expect(a.name).toMatch(/^Aufnahme \d\d\.\d\d\. \d\d:\d\d$/);
+    expect(a.name).toBe("Aufnahme 1");
     expect(a.duration).toBe(12.3);
     expect((await recordingsOf(u.id, null)).map((r) => r.id)).toEqual([a.id]);
     expect((await recordingsOf(u.id, p.id)).map((r) => r.id)).toEqual([b.id]);

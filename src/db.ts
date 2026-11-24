@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from "dexie";
+import Dexie, { type EntityTable, type Table } from "dexie";
 import { buildSeed, defaultLists, withDefaults } from "./seed";
 import { backfillUnsorted } from "./backfill";
 import { moveToFirstUnit } from "./unitsMigrate";
@@ -450,6 +450,9 @@ export class SkillDB extends Dexie {
     // Version 8: Titelbilder der Stücke (nur lokal).
     this.version(8).stores({ covers: "id" });
 
+    // Version 9: Aufnahmen mit Standardnamen („Aufnahme 24.11. 21:36“) heißen fortlaufend „Aufnahme 1“, „Aufnahme 2“ …
+    this.version(9).stores({}).upgrade((tx) => renameDefaultRecordings(tx.table("recordings")));
+
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
     for (const name of SYNC_TABLES) {
       const t = this.table(name) as unknown as { hook: (n: string, fn: unknown) => void };
@@ -495,4 +498,21 @@ if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());
 
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+/** Aufnahmen mit Standardnamen („Aufnahme 24.11. 21:36“) heißen fortlaufend „Aufnahme 1“, „Aufnahme 2“ … (pro Stück/Abschnitt, nach Zeit). */
+export async function renameDefaultRecordings(table: Table<Recording, string>): Promise<void> {
+  const recs = await table.toArray();
+  const old = /^Aufnahme \d{2}\.\d{2}\. \d{2}:\d{2}$/;
+  const scope = (r: Recording) => `${r.unitId}|${r.partId ?? ""}`;
+  const taken = new Map<string, number>();
+  for (const r of recs) {
+    const m = /^Aufnahme (\d+)$/.exec(r.name);
+    if (m) taken.set(scope(r), Math.max(taken.get(scope(r)) ?? 0, Number(m[1])));
+  }
+  for (const r of recs.filter((x) => old.test(x.name)).sort((a, b) => a.at - b.at)) {
+    const n = (taken.get(scope(r)) ?? 0) + 1;
+    taken.set(scope(r), n);
+    await table.update(r.id, { name: `Aufnahme ${n}` });
+  }
 }

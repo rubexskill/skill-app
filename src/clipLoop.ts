@@ -28,3 +28,12 @@ export function clampRange(start: number, end: number, duration: number, moved: 
   else b = Math.max(b, Math.min(duration, a + gap));
   return [a, b];
 }
+
+/** Wirksames Ende für die Bildschirmschleife: gesetztes Ende; beginnt der Ausschnitt später als 0, endet er kurz vor dem Clip-Ende (kein „ended“-Ereignis). 0 = ganzer Clip (natives Loop). */
+export function loopEnd(start: number, end: number, duration: number): number {
+  if (duration > 0 && end > 0 && end < duration - 0.05) return end;
+  return start > 0.05 && duration > 0 ? duration - 0.08 : 0;
+}
+
+/** Ist die Zeit seit dem letzten Bild deutlich zurückgesprungen (natives Loop hat neu gestartet)? */
+export const wrapped = (prev: number, now: number, min = 0.3): boolean => prev - now > min;

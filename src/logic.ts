@@ -61,14 +61,34 @@ export function parseDay(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** „Heute“, „Gestern“, „Mo, 17. Nov.“ */
+/** Genaues Datum: „Mo, 17. Nov.“ (mit Jahr, wenn nicht das laufende). */
+export function dateLabel(ts: number, now = new Date()): string {
+  const d = new Date(ts);
+  const base = `${WEEKDAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}`;
+  return d.getFullYear() === now.getFullYear() ? base : `${base} ${d.getFullYear()}`;
+}
+
+/**
+ * Relatives Datum: „Heute“, „Gestern“, „Letzten Montag“ (bis 6 Tage), „Vor 2 Wochen“, „Vor 2 Monaten“, „Vor 1 Jahr“.
+ * Zukünftige Tage werden genau angegeben.
+ */
 export function dayLabel(ts: number, now = new Date()): string {
   const d = new Date(ts);
   const diff = Math.round((startOfDay(now).getTime() - startOfDay(d).getTime()) / 86400000);
   if (diff === 0) return "Heute";
+  if (diff < 0) return dateLabel(ts, now);
   if (diff === 1) return "Gestern";
-  const base = `${WEEKDAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}`;
-  return d.getFullYear() === now.getFullYear() ? base : `${base} ${d.getFullYear()}`;
+  if (diff < 7) return `Letzten ${WEEKDAYS_LONG[d.getDay()]}`;
+  if (diff < 30) { const w = Math.floor(diff / 7); return w === 1 ? "Vor 1 Woche" : `Vor ${w} Wochen`; }
+  if (diff < 365) { const m = Math.max(1, Math.floor(diff / 30)); return m === 1 ? "Vor 1 Monat" : `Vor ${m} Monaten`; }
+  const y = Math.floor(diff / 365);
+  return y === 1 ? "Vor 1 Jahr" : `Vor ${y} Jahren`;
+}
+
+/** Zeile unter einer Aufnahme: „Heute, 21:36 · 0:03“, sonst „Gestern · 0:03“. */
+export function whenLabel(ts: number, now = new Date()): string {
+  const day = dayLabel(ts, now);
+  return day === "Heute" ? `Heute, ${timeLabel(ts)}` : day;
 }
 
 /** Fälligkeit: „Heute“, „Morgen“, „Gestern“, „Fr, 28. Nov.“ */
@@ -78,7 +98,7 @@ export function dueLabel(key: string): string {
   if (diff === 0) return "Heute";
   if (diff === 1) return "Morgen";
   if (diff === -1) return "Gestern";
-  return dayLabel(d.getTime());
+  return dateLabel(d.getTime());
 }
 
 export function longDate(d: Date): string {

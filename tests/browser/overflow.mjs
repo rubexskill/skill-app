@@ -66,6 +66,7 @@ async function seed(page) {
       { id: "rc2", unitId: "u1", partId: "p1", name: "Takt 1–8", note: "", at: Date.now(), duration: 12, size: 300000, mime: "audio/mp4" },
       { id: "rc3", unitId: "u1", partId: "p1", name: "Zweite Aufnahme " + LONG, note: "", at: Date.now() - 3600000, duration: 30, size: 600000, mime: "audio/mp4" },
     ]);
+    await db.recBlobs.bulkPut([{ id: "rc1", blob: new Blob([new Uint8Array(8)], { type: "audio/mp4" }) }, { id: "rc2", blob: new Blob([new Uint8Array(8)], { type: "audio/mp4" }) }]);
     await db.sessions.add({ id: "se2", skillId: piano.id, start: Date.now() - 7200000, minutes: 30, unitId: "u1" });
     return first.id;
   }, [LONG, URL_LONG]);
@@ -213,9 +214,10 @@ async function run() {
     const hasHero = await page.locator(".page:not(.is-covered) .hero").count();
     const hasTotal = await page.locator(".total-card").count();
     if (hasHero || !hasTotal) failures.push(`${width}px · Klavierstück: Timer-Ring statt Gesamtkarte (hero ${hasHero}, total ${hasTotal})`);
-    // Raster: „Neues Stück“ als erste Karte, 2 Spalten
-    const gridInfo = await page.evaluate(() => { const g = document.querySelector(".page[aria-hidden='false'] .unit-grid"); if (!g) return null; const k = [...g.children].map((c) => c.getBoundingClientRect()); return { n: k.length, first: g.children[0].className, sameRow: Math.abs(k[0].top - k[1].top) < 2, wide: k[0].width }; });
-    if (!gridInfo || gridInfo.n < 2 || gridInfo.first !== "unit-new" || !gridInfo.sameRow) failures.push(`${width}px · Stück-Raster: ${JSON.stringify(gridInfo)}`);
+    // Raster: erstes „Lerne ich“ groß, „Neues Stück“ klein darunter
+    await page.evaluate(([sid]) => window.db.units.put({ id: "u3", skillId: sid, title: "Auffrischen-Stück", status: "auffrischen", note: "", nextNote: null, order: 0, createdAt: Date.now() }), [await page.evaluate(() => window.db.units.get("u1").then((x) => x.skillId))]); await page.waitForTimeout(500);
+    const gridInfo = await page.evaluate(() => { const g = document.querySelector(".page[aria-hidden='false'] .unit-grid"); if (!g) return null; const k = [...g.children]; const add = g.parentElement.querySelector(".unit-add"); const fr = k[0].getBoundingClientRect(); const sr = k[1].getBoundingClientRect(); return { n: k.length, featured: k[0].classList.contains("is-featured"), wide: fr.width > sr.width * 1.7, order: k.map((c) => c.querySelector(".unit-status")?.textContent), addH: add?.getBoundingClientRect().height, addBelow: add ? add.getBoundingClientRect().top >= k[k.length - 1].getBoundingClientRect().bottom : false, gridW: g.getBoundingClientRect().width, addW: add?.getBoundingClientRect().width }; });
+    if (!gridInfo || gridInfo.n < 2 || !gridInfo.featured || !gridInfo.wide || gridInfo.order[0] !== "Lerne ich" || gridInfo.order[gridInfo.order.length - 1] !== "Auffrischen" && gridInfo.order.includes("Auffrischen") && gridInfo.order.indexOf("Auffrischen") < gridInfo.order.lastIndexOf("Lerne ich") || !(gridInfo.addH < 60) || !gridInfo.addBelow) failures.push(`${width}px · Stück-Raster: ${JSON.stringify(gridInfo)}`);
     await page.evaluate(([sid]) => window.db.units.put({ id: "u2", skillId: sid, title: "Sehr langer Stückname " + "x".repeat(60), status: "lerne", note: "", nextNote: null, order: 1, createdAt: Date.now(), hasCover: true }), [await page.evaluate(() => window.db.units.get('u1').then((x) => x.skillId))]); await page.waitForTimeout(500);
     await check("Stück-Raster (Platzhalter, Bild fehlt)");
     await page.locator(".unit-tile").first().click(); await page.waitForTimeout(800);
@@ -251,6 +253,8 @@ async function run() {
     const detailText = await top.locator(".rec-detail").first().textContent().catch(() => null);
     if (!detailText || !/Fehler: \w+/.test(detailText)) failures.push(`${width}px · Fehlerdetail fehlt: ${detailText}`);
     await check("Unterpunkt Aufnahme-Fehler");
+    const recRows = await top.locator(".fold-body .row").allTextContents();
+    if (recRows.some((t) => /\b\d+\s?(KB|MB)\b/.test(t)) || !recRows.some((t) => /Aufnahme/.test(t) && /(Heute, \d\d:\d\d|Gestern|Letzten|Vor \d)/.test(t))) failures.push(`${width}px · Aufnahmen-Zeilen: ${JSON.stringify(recRows.slice(0, 4))}`);
     // ohne Aufnahmen keine Größenangabe
     await page.evaluate(() => window.db.recordings.clear()); await page.waitForTimeout(500);
     const footerText = await top.locator(".fold-body .group-footer").allTextContents();
@@ -272,31 +276,93 @@ async function run() {
     await page.locator('.page[aria-hidden="false"] .fold-head', { hasText: "Notizen zum Stück" }).click().catch(() => {}); await page.waitForTimeout(300); await check("Unterpunkt Notizen offen");
     await page.locator(".part-main").first().click(); await page.waitForTimeout(800);
     await check("Abschnitt");
-    await page.evaluate(async () => { const c = document.createElement("canvas"); c.width = 160; c.height = 100; const ctx = c.getContext("2d"); ctx.fillStyle = "#468"; ctx.fillRect(0, 0, 160, 100); const t = c.toDataURL("image/jpeg", 0.7); const p = await window.db.parts.get("p1"); p.clips[0].thumb = t; await window.db.parts.put(p); await window.db.clipBlobs.put({ id: "c1", blob: new Blob([new Uint8Array(20)], { type: "video/mp4" }) }); });
+    const made = await page.evaluate(async () => {
+      const c = document.createElement("canvas"); c.width = 160; c.height = 100; const ctx = c.getContext("2d"); ctx.fillStyle = "#468"; ctx.fillRect(0, 0, 160, 100);
+      const thumb = c.toDataURL("image/jpeg", 0.7);
+      let blob = new Blob([new Uint8Array(20)], { type: "video/mp4" }); let real = false;
+      try {
+        const st = c.captureStream(30); const rec = new MediaRecorder(st, { mimeType: "video/webm" }); const chunks = [];
+        rec.ondataavailable = (e) => chunks.push(e.data);
+        const done = new Promise((r) => (rec.onstop = r));
+        rec.start(); let n = 0; const iv = setInterval(() => { ctx.fillStyle = n++ % 2 ? "#468" : "#864"; ctx.fillRect(0, 0, 160, 100); }, 40);
+        await new Promise((r) => setTimeout(r, 1600)); clearInterval(iv); rec.stop(); await done;
+        blob = new Blob(chunks, { type: "video/webm" }); real = blob.size > 500;
+      } catch {}
+      const p = await window.db.parts.get("p1"); p.clips[0].thumb = thumb; p.clips[0].duration = 12; p.clips[0].start = undefined; p.clips[0].end = undefined; await window.db.parts.put(p);
+      await window.db.clipBlobs.put({ id: "c1", blob });
+      return real;
+    });
+    await page.waitForTimeout(500);
     await page.waitForTimeout(500);
     // Clip-Zeile: Titel „Clip 1“, nur Dauer, kein Dateiname, keine Speicherangabe
     const rowTxt = await page.locator('.page[aria-hidden="false"] .clip-row').first().innerText();
     if (/\.mp4|MB|KB/.test(rowTxt) || !/Clip 1/.test(rowTxt) || !/0:12/.test(rowTxt)) failures.push(`${width}px · Clip-Zeile: ${JSON.stringify(rowTxt)}`);
     const pageTxt = await page.locator('.page-content:has(.clip-row)').first().innerText();
     if (/\d\s?(MB|KB)\b/.test(pageTxt)) failures.push(`${width}px · Abschnitt zeigt Speicherangabe: ${pageTxt.match(/.{0,30}\d\s?(MB|KB).{0,10}/)}`);
-    // Clip öffnet Vollbild-Player: schwarz, Schließen oben links, Tempo, Schleife
+    // Clip öffnet Vollbild-Player: füllt alles, Seite dahinter gesperrt
     await page.locator('.page[aria-hidden="false"] .clip-row').first().click(); await page.waitForTimeout(700);
-    const fsi = await page.evaluate(() => { const f = document.querySelector(".fsp"); if (!f) return null; const r = f.getBoundingClientRect(); const x = document.querySelector(".fsp-x"); const xr = x?.getBoundingClientRect(); return { w: r.width, h: r.height, bg: getComputedStyle(f).backgroundColor, closeLeft: xr ? xr.left < r.width / 2 && xr.top < 140 : false }; });
-    if (!fsi || fsi.w < width - 1 || fsi.bg !== "rgb(0, 0, 0)" || !fsi.closeLeft) failures.push(`${width}px · Vollbild-Player: ${JSON.stringify(fsi)}`);
+    const fsi = await page.evaluate(() => { const f = document.querySelector(".fsp"); if (!f) return null; const r = f.getBoundingClientRect(); const x = document.querySelector(".fsp-x")?.getBoundingClientRect(); const pts = [[2, 2], [innerWidth - 3, 2], [2, innerHeight - 3], [innerWidth - 3, innerHeight - 3], [innerWidth / 2, innerHeight - 10]]; return { top: r.top, left: r.left, w: r.width, h: r.height, ih: innerHeight, bg: getComputedStyle(f).backgroundColor, closeLeft: !!x && x.left < r.width / 2 && x.top < 140, covered: pts.every(([px, py]) => !!document.elementFromPoint(px, py)?.closest(".fsp")), locked: document.documentElement.classList.contains("has-player") && getComputedStyle(document.body).overflow === "hidden", rootHidden: getComputedStyle(document.getElementById("root")).visibility === "hidden" }; });
+    if (!fsi || fsi.top !== 0 || fsi.left !== 0 || fsi.w < width - 1 || Math.abs(fsi.h - fsi.ih) > 1 || fsi.bg !== "rgb(0, 0, 0)" || !fsi.closeLeft || !fsi.covered || !fsi.locked || !fsi.rootHidden) failures.push(`${width}px · Vollbild-Player: ${JSON.stringify(fsi)}`);
     await check("Vollbild-Player");
     await page.locator(".fsp-cap", { hasText: "0,5×" }).first().click({ timeout: 2000 }).catch(() => failures.push(`${width}px · Tempo-Kapsel 0,5× fehlt`));
     const speed = await page.evaluate(() => document.querySelector(".fsp video")?.playbackRate);
     if (speed !== 0.5) failures.push(`${width}px · Tempo 0,5× nicht gesetzt: ${speed}`);
+    await page.locator(".fsp-cap", { hasText: "1×" }).first().click();
     const pitch = await page.evaluate(() => { const v = document.querySelector(".fsp video"); return v ? (v.preservesPitch !== false) : null; });
     if (pitch === false) failures.push(`${width}px · Tonhöhe wird nicht erhalten`);
+    if (made) {
+      // Abspielen nur über den Mittelknopf; erstes Tippen aufs Video zeigt nur die Steuerung
+      await page.locator(".fsp-center").click(); await page.waitForTimeout(2600);
+      const st1 = await page.evaluate(() => ({ paused: document.querySelector(".fsp video").paused, ui: document.querySelector(".fsp-ui").classList.contains("is-on") }));
+      if (st1.paused || st1.ui) failures.push(`${width}px · Overlay blendet nach 2 s nicht aus / Video pausiert: ${JSON.stringify(st1)}`);
+      await page.mouse.click(width / 2, 200); await page.waitForTimeout(350);
+      const st2 = await page.evaluate(() => ({ paused: document.querySelector(".fsp video").paused, ui: document.querySelector(".fsp-ui").classList.contains("is-on") }));
+      if (st2.paused || !st2.ui) failures.push(`${width}px · Erstes Tippen soll nur Steuerung zeigen: ${JSON.stringify(st2)}`);
+      // Ganzer Clip: natives Loop, läuft ohne Pause und ohne Overlay weiter
+      await page.waitForTimeout(2300);
+      const lp = await page.evaluate(async () => {
+        const v = document.querySelector(".fsp video"); let pauses = 0; v.addEventListener("pause", () => pauses++);
+        const ui = []; const o = new MutationObserver(() => ui.push(document.querySelector(".fsp-ui").classList.contains("is-on"))); o.observe(document.querySelector(".fsp-ui"), { attributes: true });
+        await new Promise((r) => setTimeout(r, 3400)); o.disconnect();
+        return { loop: v.loop, paused: v.paused, pauses, uiOn: ui.includes(true), count: document.querySelector(".fsp-count").textContent, dur: v.duration };
+      });
+      if (!lp.loop || lp.paused || lp.pauses || lp.uiOn || !/^\d+× in der Schleife$/.test(lp.count)) failures.push(`${width}px · Dauerschleife (ganzer Clip): ${JSON.stringify(lp)}`);
+      // Ausschnitt: Rücksprung ohne pause/play, Overlay bleibt weg
+      await page.locator(".fsp-hit").click(); await page.waitForTimeout(400);
+      await page.locator('.fsp-btn[aria-label="Ausschnitt"]').click(); await page.waitForTimeout(300);
+      await page.evaluate(() => { const [s, e] = document.querySelectorAll(".fsp-trim input"); const set = (el, val) => { const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value"); d.set.call(el, String(val)); el.dispatchEvent(new Event("change", { bubbles: true })); }; set(e, 0.8); set(s, 0.2); });
+      await page.locator('.fsp-btn[aria-label="Ausschnitt"]').click(); await page.waitForTimeout(400);
+      await page.mouse.click(width / 2, 200); await page.waitForTimeout(2400);
+      const tr = await page.evaluate(async () => {
+        const v = document.querySelector(".fsp video"); let pauses = 0, plays = 0; v.addEventListener("pause", () => pauses++); v.addEventListener("play", () => plays++);
+        let maxT = 0, minAfter = 9; const t0 = performance.now();
+        await new Promise((res) => { const f = () => { maxT = Math.max(maxT, v.currentTime); if (performance.now() - t0 > 2500) res(); else requestAnimationFrame(f); }; f(); });
+        const ui = document.querySelector(".fsp-ui").classList.contains("is-on");
+        return { loop: v.loop, paused: v.paused, pauses, plays, ui, maxT };
+      });
+      if (tr.loop || tr.paused || tr.pauses || tr.plays || tr.ui || tr.maxT > 0.95) failures.push(`${width}px · Schleife mit Ausschnitt: ${JSON.stringify(tr)}`);
+      // Pause nur über den Mittelknopf
+      await page.mouse.click(width / 2, 200); await page.waitForTimeout(350);
+      await page.locator(".fsp-center").click(); await page.waitForTimeout(300);
+      if (!(await page.evaluate(() => document.querySelector(".fsp video").paused))) failures.push(`${width}px · Mittelknopf pausiert nicht`);
+      const stillUi = await page.evaluate(async () => { await new Promise((r) => setTimeout(r, 2500)); return document.querySelector(".fsp-ui").classList.contains("is-on"); });
+      if (!stillUi) failures.push(`${width}px · Steuerung blendet im Pausenzustand aus`);
+      await page.evaluate(() => window.db.parts.get("p1").then((p) => { p.clips[0].start = undefined; p.clips[0].end = undefined; return window.db.parts.put(p); }));
+    } else console.log(`${width}px · Hinweis: Chromium konnte kein Test-Video aufnehmen, Schleifen-Prüfung übersprungen`);
     await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(400);
     await check("Vollbild-Player quer");
-    const fsl = await page.evaluate(() => { const f = (document.querySelector(".fsp") ?? document.body).getBoundingClientRect(); return { w: f.width, h: f.height, sw: document.documentElement.scrollWidth }; });
-    if (fsl.sw > 845) failures.push(`${width}px · Player quer läuft über: ${JSON.stringify(fsl)}`);
+    const fsl = await page.evaluate(() => { const f = (document.querySelector(".fsp") ?? document.body).getBoundingClientRect(); return { w: f.width, h: f.height, ih: innerHeight, sw: document.documentElement.scrollWidth }; });
+    if (fsl.sw > 845 || Math.abs(fsl.h - fsl.ih) > 1) failures.push(`${width}px · Player quer: ${JSON.stringify(fsl)}`);
     await page.setViewportSize({ width, height: 800 }); await page.waitForTimeout(300);
+    // Schließen: Tippen auf X; der Geister-Klick darf die Seite dahinter (Zurück-Knopf unter dem X) nicht treffen
     await page.mouse.click(width / 2, 300); await page.waitForTimeout(300);
-    await page.keyboard.press("Escape"); await page.waitForTimeout(500);
+    const xb = await page.locator(".fsp-x").boundingBox();
+    await page.mouse.click(xb.x + xb.width / 2, xb.y + xb.height / 2); await page.waitForTimeout(150);
     if (await page.locator(".fsp").count()) failures.push(`${width}px · Player lässt sich nicht schließen`);
+    await page.waitForTimeout(500);
+    if (!(await page.locator('.page[aria-hidden="false"] .clip-row').count())) failures.push(`${width}px · Geister-Klick nach dem Schließen hat die Seite dahinter getroffen`);
+    const rootBack = await page.evaluate(() => getComputedStyle(document.getElementById("root")).visibility !== "hidden" && !document.documentElement.classList.contains("has-player"));
+    if (!rootBack) failures.push(`${width}px · Seite nach Schließen noch gesperrt`);
     // Umbenennen per Menü
     await page.locator('.page[aria-hidden="false"] .clip-more').first().click(); await page.waitForTimeout(400);
     await page.getByText("Umbenennen").click({ timeout: 2000 }).catch(() => {}); await page.waitForTimeout(400);

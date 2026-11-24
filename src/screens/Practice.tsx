@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Recording } from "../db";
-import { dayLabel, loadSetting, saveSetting, timeLabel } from "../logic";
+import { dateLabel, loadSetting, saveSetting, timeLabel, whenLabel } from "../logic";
 import { Metronome, BPM_MAX, BPM_MIN, METERS, clampBpm, meterOf, stopAllMetronomes } from "../metronome";
 import { RECORDER_HINT, errorTip, recorderSupported, startRecording, type ActiveRecording, type RecorderError } from "../recorder";
 import { addRecording, clipStorage, missingRecordingIds, recordingsOf, recordingsOfUnit, removeRecording, removeRecordings, sizeLabel, storageWarning, updateRecording, type ClipStorage } from "../units";
@@ -191,17 +191,12 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
   };
 
   const unsupported = !recorderSupported();
-  const media = storage ? storage.clipBytes + (storage.recBytes ?? 0) : 0;
   const warn = storage ? storageWarning(storage) : null;
 
   return (
     <Fold title="Aufnahmen" icon="mic" summary={recs?.length ? String(recs.length) : ""}
       menu={(recs?.length ?? 0) > 0 ? { label: "Mehr zu den Aufnahmen", onClick: menuAll } : undefined}>
-      <Group footer={storage && ((storage.recCount ?? 0) > 0 || warn) ? (
-        <span className={warn ? "clip-warn" : undefined}>
-          {(storage.recCount ?? 0) > 0 ? `${sizeLabel(storage.recBytes ?? 0)} Aufnahmen${media > (storage.recBytes ?? 0) ? `, insgesamt ${sizeLabel(media)} mit Clips` : ""}. ` : ""}{warn ?? "Nur auf diesem Gerät, kein Upload."}
-        </span>
-      ) : undefined}>
+      <Group footer={warn ? <span className="clip-warn">{warn}</span> : undefined}>
         {active ? (
           <div className="row rec-live">
             <span className="rec-dot" aria-hidden="true" />
@@ -224,7 +219,7 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
         {(recs ?? []).map((r) => (
           <SwipeRow key={r.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeOne(r) }]}>
             <Row title={r.name} muted={missing?.has(r.id)}
-              subtitle={missing?.has(r.id) ? "Aufnahme fehlt auf diesem Gerät" : `${dayLabel(r.at)}, ${timeLabel(r.at)} · ${fmtDur(r.duration)} · ${sizeLabel(r.size)}${r.note ? " · Notiz" : ""}`}
+              subtitle={missing?.has(r.id) ? "Aufnahme fehlt auf diesem Gerät" : `${whenLabel(r.at)} · ${fmtDur(r.duration)}${r.note ? " · Notiz" : ""}`}
               leading={
                 <button className={`rec-play${playing === r.id ? " is-on" : ""}`} aria-label={playing === r.id ? "Pause" : `${r.name} abspielen`} disabled={missing?.has(r.id)}
                   onClick={(e) => { e.stopPropagation(); void play(r); }}>
@@ -251,7 +246,7 @@ function RecordingSheet({ rec, onClose }: { rec: Recording | null; onClose: () =
   const save = async () => { if (shown) await updateRecording(shown.id, { name, note: note.trim() }); onClose(); };
   return (
     <Sheet open={!!rec} onClose={onClose} title="Aufnahme" action={{ label: "Sichern", onClick: () => void save(), disabled: !name.trim() }}>
-      <Group footer={shown ? `${dayLabel(shown.at)}, ${timeLabel(shown.at)} · ${fmtDur(shown.duration)} · ${sizeLabel(shown.size)}` : undefined}>
+      <Group footer={shown ? `${dateLabel(shown.at)}, ${timeLabel(shown.at)} · ${fmtDur(shown.duration)} · ${sizeLabel(shown.size)}` : undefined}>
         <div className="row input-row labeled">
           <span className="input-label">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} />
@@ -317,12 +312,12 @@ function CompareSheet({ open, onClose, recs }: { open: boolean; onClose: () => v
   };
   const date = (id: string | null) => {
     const r = recs.find((x) => x.id === id);
-    return r ? `${dayLabel(r.at)}, ${timeLabel(r.at)} · ${fmtDur(r.duration)}` : "";
+    return r ? `${whenLabel(r.at)} · ${fmtDur(r.duration)}` : "";
   };
   const choose = (which: "A" | "B") =>
     actionSheet({
       title: `Aufnahme ${which}`,
-      choices: recs.map((r) => ({ label: `${r.name} · ${dayLabel(r.at)}`, checked: r.id === (which === "A" ? a : b), onSelect: () => { stop(); (which === "A" ? setA : setB)(r.id); } })),
+      choices: recs.map((r) => ({ label: `${r.name} · ${whenLabel(r.at)}`, checked: r.id === (which === "A" ? a : b), onSelect: () => { stop(); (which === "A" ? setA : setB)(r.id); } })),
     });
 
   return (

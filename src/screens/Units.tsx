@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, UNIT_STATUSES, UNIT_STATUS_LABEL, type ClipMeta, type Part, type Skill, type UnitStatus } from "../db";
 import { dayLabel, elapsedLabel, minutesLabel, bigTime } from "../logic";
 import {
-  addClip, addPartNote, clipTitle, ensureThumbs, initials, removeUnitCover, setUnitCover, coverCrop, addUnitNote, migrateUnitNote, removeUnitNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, movePart, missingClipIds, removeClip, removePartNote,
+  addClip, addPartNote, clipTitle, ensureThumbs, initials, removeUnitCover, setUnitCover, coverCrop, addUnitNote, migrateUnitNote, removeUnitNote, sortUnits, clipStorage, createPart, createUnit, deletePart, deleteUnit, movePart, missingClipIds, removeClip, removePartNote,
   renameClip, setPartMetronome, setUnitMetronome, sizeLabel, storageWarning, unitProgress, updatePart, updateUnit, type ClipStorage,
 } from "../units";
 import { AutoTextarea, CheckCircle, Fold, Group, NavButton, NavPage, Row, Segmented, Sheet, Switch, SwipeRow, useNow, useUI } from "../components/ui";
@@ -148,15 +148,12 @@ export function UnitsSection({ skill }: { skill: Skill }) {
         <h2 className="block-title">Unterpunkte</h2>
       </div>
       <div className="unit-grid">
-        <button className="unit-new" onClick={() => setAdding(true)}>
-          <span className="unit-new-box"><Icon name="plus" size={26} /></span>
-          <span className="unit-new-label">Neues Stück</span>
-        </button>
-        {(units ?? []).map((u) => {
+        {sortUnits(units ?? []).map((u, i) => {
           const mine = (parts ?? []).filter((p) => p.unitId === u.id);
           const pr = unitProgress(mine);
+          const featured = i === 0 && u.status === "lerne";
           return (
-            <button key={u.id} className="unit-tile" onClick={() => nav.push({ type: "unit", id: u.id })}>
+            <button key={u.id} className={`unit-tile${featured ? " is-featured" : ""}`} onClick={() => nav.push({ type: "unit", id: u.id })}>
               <UnitCover unit={u} kategorie={skill.kategorie} />
               <span className="unit-tile-title">{u.title}</span>
               <span className="unit-tile-meta">
@@ -168,6 +165,7 @@ export function UnitsSection({ skill }: { skill: Skill }) {
           );
         })}
       </div>
+      <button className="unit-add" onClick={() => setAdding(true)}><Icon name="plus" size={16} />Neues Stück</button>
       {assigned < total && units && units.length > 0 && <p className="units-foot">Gesamt {minutesLabel(total)}, davon {minutesLabel(total - assigned)} ohne Stück.</p>}
       <NameSheet open={adding} onClose={() => setAdding(false)} title="Neues Stück" label="Anlegen" placeholder="Titel, z. B. Name des Stücks"
         onSave={(name) => void createUnit(skill.id, name).then((u) => nav.push({ type: "unit", id: u.id }))} />
@@ -399,7 +397,7 @@ export function PartPage({ id }: { id: string }) {
   useEffect(() => { if (part === undefined && loaded.current) pop(); }, [part, pop]);
   useEffect(() => { void clipStorage().then(setStorage); }, [part?.clips.length]);
   // Standbilder für ältere Clips nachziehen
-  useEffect(() => { if (part?.clips.some((c) => !c.thumb)) void ensureThumbs(id); }, [id, part?.clips.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!player && part?.clips.some((c) => !c.thumb)) void ensureThumbs(id); }, [id, part?.clips.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const back = depth > 0 ? { label: nav.backLabel, onClick: pop } : undefined;
   if (!part || !unit || !skill) return <NavPage title="" back={back}><div /></NavPage>;
