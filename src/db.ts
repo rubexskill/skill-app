@@ -258,6 +258,9 @@ export interface Unit extends Synced {
   note: string;
   notes?: PartNote[];
   nextNote: NextNote | null;
+  /** Metronom-Standard für alle Abschnitte dieses Stücks */
+  bpm?: number;
+  meter?: string;
   order: number;
   createdAt: number;
 }
@@ -301,7 +304,25 @@ export interface Part extends Synced {
   loops: number;
   /** Vorbereitet für eine spätere Notenfolge */
   sequence?: NoteEvent[];
+  /** Eigenes Metronom-Tempo dieses Abschnitts (sonst der Standard des Stücks) */
+  bpm?: number;
+  meter?: string;
   createdAt: number;
+}
+
+/** Selbstaufnahme (Audio) zu einem Stück (partId fehlt) oder Abschnitt. Die Datei liegt nur lokal in `recBlobs`. */
+export interface Recording extends Synced {
+  id: string;
+  unitId: string;
+  partId?: string;
+  name: string;
+  note: string;
+  at: number;
+  duration: number;
+  size: number;
+  mime: string;
+  /** Vorbereitet: später erkannte Notenfolge dieser Aufnahme (noch ungenutzt) */
+  sequence?: NoteEvent[];
 }
 
 export interface ClipBlob {
@@ -309,7 +330,7 @@ export interface ClipBlob {
   blob: Blob;
 }
 
-export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts"] as const;
+export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings"] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 let hooksOff = false;
@@ -337,6 +358,8 @@ export class SkillDB extends Dexie {
   cards!: EntityTable<Card, "id">;
   units!: EntityTable<Unit, "id">;
   parts!: EntityTable<Part, "id">;
+  recordings!: EntityTable<Recording, "id">;
+  recBlobs!: EntityTable<ClipBlob, "id">;
   clipBlobs!: EntityTable<ClipBlob, "id">;
   tombs!: EntityTable<Tomb, "id">;
 
@@ -410,6 +433,12 @@ export class SkillDB extends Dexie {
       .upgrade(async (tx) => {
         await moveToFirstUnit({ skills: tx.table("skills"), sessions: tx.table("sessions"), records: tx.table("records"), units: tx.table("units") });
       });
+
+    // Version 7: Selbstaufnahmen (Metadaten abgleichbar, Audiodateien nur lokal).
+    this.version(7).stores({
+      recordings: "id, unitId, partId, at",
+      recBlobs: "id",
+    });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
     for (const name of SYNC_TABLES) {

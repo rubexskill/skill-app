@@ -141,6 +141,14 @@ export async function applySync(p: ParsedSync): Promise<SyncReport> {
           }
         }
       }
+      // Aufnahmen gelöschter Unterpunkte
+      for (const rec of await db.recordings.toArray()) {
+        if (!(await db.units.get(rec.unitId))) {
+          await db.recordings.delete(rec.id);
+          await db.tombs.put({ id: `recordings:${rec.id}`, table: "recordings", itemId: rec.id, at: Date.now() });
+          bump(report.removed, "recordings");
+        }
+      }
       // Abschnitte gelöschter Unterpunkte
       const unitIds = new Set((await db.units.toArray()).map((u) => u.id));
       for (const part of await db.parts.toArray()) {
@@ -164,7 +172,7 @@ export async function applySync(p: ParsedSync): Promise<SyncReport> {
     else if (table === "wishes" || table === "apps") names.push(String(r.name));
     else if (table === "cards") names.push(String(r.front));
     else if (table === "units") names.push(String(r.title));
-    else if (table === "parts") names.push(String(r.name));
+    else if (table === "parts" || table === "recordings") names.push(String(r.name));
     else if (table === "sessions") names.push(`${titles.get(String(r.skillId)) ?? "Session"} · ${r.minutes} min`);
   }
   report.highlights = names;
@@ -187,6 +195,7 @@ const LABEL: Record<SyncTable, [string, string]> = {
   cards: ["Karteikarte", "Karteikarten"],
   units: ["Unterpunkt", "Unterpunkte"],
   parts: ["Abschnitt", "Abschnitte"],
+  recordings: ["Aufnahme", "Aufnahmen"],
 };
 
 /** „3 Sessions, 1 To-do“ */

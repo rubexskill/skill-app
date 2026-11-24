@@ -61,6 +61,11 @@ async function seed(page) {
       { id: "p1", unitId: "u1", name: "Intro " + LONG, order: 0, solid: true, notes: [{ id: "n1", text: LONG, at: Date.now() }], links: [{ id: "pl", url: URL_LONG, title: LONG, addedAt: Date.now() }], clips: [{ id: "c1", name: LONG + ".mp4", size: 4200000, addedAt: Date.now(), duration: 12 }], loops: 7, createdAt: Date.now() },
       { id: "p2", unitId: "u1", name: "Strophe", order: 1, solid: false, notes: [], links: [], clips: [], loops: 0, createdAt: Date.now() },
     ]);
+    await db.recordings.bulkAdd([
+      { id: "rc1", unitId: "u1", name: "Aufnahme " + LONG, note: LONG, at: Date.now() - 86400000, duration: 83.4, size: 1500000, mime: "audio/mp4" },
+      { id: "rc2", unitId: "u1", partId: "p1", name: "Takt 1–8", note: "", at: Date.now(), duration: 12, size: 300000, mime: "audio/mp4" },
+      { id: "rc3", unitId: "u1", partId: "p1", name: "Zweite Aufnahme " + LONG, note: "", at: Date.now() - 3600000, duration: 30, size: 600000, mime: "audio/mp4" },
+    ]);
     await db.sessions.add({ id: "se2", skillId: piano.id, start: Date.now() - 7200000, minutes: 30, unitId: "u1" });
     return first.id;
   }, [LONG, URL_LONG]);
@@ -187,10 +192,39 @@ async function run() {
     if (hasHero || !hasTotal) failures.push(`${width}px · Klavierstück: Timer-Ring statt Gesamtkarte (hero ${hasHero}, total ${hasTotal})`);
     await page.locator(".unit-card").first().click(); await page.waitForTimeout(800);
     await check("Unterpunkt");
+    // eingeklappt → jede Zeile einzeln aufklappen und prüfen
+    for (const name of ["Metronom", "Aufnahmen"]) {
+      const head = page.locator('.page[aria-hidden="false"] .fold-head', { hasText: name }).first();
+      await head.scrollIntoViewIfNeeded(); await head.click(); await page.waitForTimeout(350);
+      await check(`Unterpunkt ${name} offen`);
+    }
+    // Metronom: Rad drehen (Tempo wird pro Stück gemerkt), starten und stoppen
+    await page.locator('.page[aria-hidden="false"] .wheel-scroll').first().evaluate((el) => { el.scrollTop = (150 - 30) * 40; });
+    await page.waitForTimeout(700);
+    const unitBpm = await page.evaluate(() => window.db.units.get("u1").then((u) => u.bpm));
+    if (unitBpm !== 150) failures.push(`${width}px · Stück-Tempo nicht gemerkt: ${unitBpm}`);
+    await page.locator('.page[aria-hidden="false"] .metro-btn').first().click(); await page.waitForTimeout(700);
+    const blinked = await page.locator('.page[aria-hidden="false"] .metro-dots i').count();
+    if (blinked !== 4) failures.push(`${width}px · Metronom: ${blinked} Schlag-Punkte statt 4`);
+    await check("Unterpunkt Metronom läuft");
+    await page.locator('.page[aria-hidden="false"] .metro-btn').first().click(); await page.waitForTimeout(200);
+    await page.locator('.page[aria-hidden="false"] .fold-head', { hasText: "Aufnahmen" }).first().click();
+    await page.locator('.page[aria-hidden="false"] .fold-head', { hasText: "Metronom" }).first().click(); await page.waitForTimeout(250);
     await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Unterpunkt unten");
-    await page.locator(".fold-head", { hasText: "Notizen zum Stück" }).click().catch(() => {}); await page.waitForTimeout(300); await check("Unterpunkt Notizen offen");
+    await page.locator('.page[aria-hidden="false"] .fold-head', { hasText: "Notizen zum Stück" }).click().catch(() => {}); await page.waitForTimeout(300); await check("Unterpunkt Notizen offen");
     await page.locator(".part-main").first().click(); await page.waitForTimeout(800);
     await check("Abschnitt");
+    for (const name of ["Metronom", "Aufnahmen"]) {
+      const head = page.locator('.page[aria-hidden="false"] .fold-head', { hasText: name }).first();
+      await head.scrollIntoViewIfNeeded(); await head.click(); await page.waitForTimeout(350);
+      await check(`Abschnitt ${name} offen`);
+    }
+    await page.locator('.page[aria-hidden="false"] .wheel-scroll').first().evaluate((el) => { el.scrollTop = (96 - 30) * 40; });
+    await page.waitForTimeout(700);
+    const partBpm = await page.evaluate(() => window.db.parts.get("p1").then((p) => p.bpm));
+    if (partBpm !== 96) failures.push(`${width}px · Abschnitt-Tempo nicht gemerkt: ${partBpm}`);
+    const unitStill = await page.evaluate(() => window.db.units.get("u1").then((u) => u.bpm));
+    if (unitStill !== 150) failures.push(`${width}px · Stück-Standard wurde überschrieben: ${unitStill}`);
     await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Abschnitt unten");
     await page.locator(".nav-back >> visible=true").last().click(); await page.waitForTimeout(650);
     await page.locator(".part-card .swipe-content").first().scrollIntoViewIfNeeded();

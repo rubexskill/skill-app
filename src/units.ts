@@ -1,4 +1,4 @@
-import { db, uid, type ClipMeta, type Part, type PartNote, type Unit, type UnitStatus } from "./db";
+import { db, uid, type ClipMeta, type Part, type PartNote, type Recording, type Unit, type UnitStatus } from "./db";
 
 /** Unterpunkte („Stücke“), Abschnitte und Clips. Videos liegen nur lokal in IndexedDB (clipBlobs). */
 
@@ -27,7 +27,11 @@ export async function deleteUnit(id: string): Promise<() => Promise<void>> {
   const sessions = await db.sessions.where("unitId").equals(id).toArray();
   const records = await db.records.filter((r) => r.unitId === id).toArray();
   const blobs = (await db.clipBlobs.bulkGet(parts.flatMap((p) => p.clips.map((c) => c.id)))).filter((b): b is NonNullable<typeof b> => !!b);
-  await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records], async () => {
+  const recs = await db.recordings.where("unitId").equals(id).toArray();
+  const recBlobs = (await db.recBlobs.bulkGet(recs.map((r) => r.id))).filter((b): b is NonNullable<typeof b> => !!b);
+  await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs], async () => {
+    await db.recBlobs.bulkDelete(recBlobs.map((b) => b.id));
+    await db.recordings.bulkDelete(recs.map((r) => r.id));
     await db.parts.bulkDelete(parts.map((p) => p.id));
     await db.clipBlobs.bulkDelete(blobs.map((b) => b.id));
     await db.sessions.where("unitId").equals(id).modify((s) => { delete s.unitId; });
@@ -35,8 +39,10 @@ export async function deleteUnit(id: string): Promise<() => Promise<void>> {
     await db.units.delete(id);
   });
   return async () => {
-    await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records], async () => {
+    await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs], async () => {
       if (unit) await db.units.put(unit);
+      await db.recordings.bulkPut(recs);
+      await db.recBlobs.bulkPut(recBlobs);
       await db.parts.bulkPut(parts);
       await db.clipBlobs.bulkPut(blobs);
       await db.sessions.bulkPut(sessions);
@@ -65,14 +71,20 @@ export async function updatePart(id: string, patch: Partial<Part>) {
 export async function deletePart(id: string): Promise<() => Promise<void>> {
   const part = await db.parts.get(id);
   const blobs = part ? (await db.clipBlobs.bulkGet(part.clips.map((c) => c.id))).filter((b): b is NonNullable<typeof b> => !!b) : [];
-  await db.transaction("rw", [db.parts, db.clipBlobs], async () => {
+  const recs = await db.recordings.where("partId").equals(id).toArray();
+  const recBlobs = (await db.recBlobs.bulkGet(recs.map((r) => r.id))).filter((b): b is NonNullable<typeof b> => !!b);
+  await db.transaction("rw", [db.parts, db.clipBlobs, db.recordings, db.recBlobs], async () => {
     await db.clipBlobs.bulkDelete(blobs.map((b) => b.id));
+    await db.recBlobs.bulkDelete(recBlobs.map((b) => b.id));
+    await db.recordings.bulkDelete(recs.map((r) => r.id));
     await db.parts.delete(id);
   });
   return async () => {
-    await db.transaction("rw", [db.parts, db.clipBlobs], async () => {
+    await db.transaction("rw", [db.parts, db.clipBlobs, db.recordings, db.recBlobs], async () => {
       if (part) await db.parts.put(part);
       await db.clipBlobs.bulkPut(blobs);
+      await db.recordings.bulkPut(recs);
+      await db.recBlobs.bulkPut(recBlobs);
     });
   };
 }
@@ -138,7 +150,10 @@ export async function addLoop(partId: string) {
 // ---------------- Clips ----------------
 
 export interface ClipStorage {
+  /** Videos */
   clipBytes: number;
+  /** Aufnahmen */
+  recBytes?: number;
   count: number;
   usage?: number;
   quota?: number;
@@ -147,8 +162,9 @@ export interface ClipStorage {
 export async function clipStorage(): Promise<ClipStorage> {
   const parts = await db.parts.toArray();
   const metas = parts.flatMap((p) => p.clips);
+  const recs = await db.recordings.toArray();
   const est = await navigator.storage?.estimate?.().catch(() => undefined);
-  return { clipBytes: metas.reduce((n, c) => n + c.size, 0), count: metas.length, usage: est?.usage, quota: est?.quota };
+  return { clipBytes: metas.reduce((n, c) => n + c.size, 0), recBytes: recs.reduce((n, r) => n + r.size, 0), count: metas.length + recs.length, usage: est?.usage, quota: est?.quota };
 }
 
 export const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : bytes >= 1024 * 1024 ? `${Math.round(bytes / 1024 / 1024)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`).replace(".", ",");
@@ -158,7 +174,8 @@ export function storageWarning(s: ClipStorage, extra = 0): string | null {
   const free = s.quota != null && s.usage != null ? s.quota - s.usage : undefined;
   if (free != null && extra > free) return `Dafür ist nicht genug Speicher frei (frei: ${sizeLabel(Math.max(0, free))}).`;
   if (free != null && s.quota && (s.usage! + extra) / s.quota > 0.8) return `Der Speicher dieser App ist fast voll (frei: ${sizeLabel(Math.max(0, free))}). Lösche alte Clips oder nimm kürzere auf.`;
-  if (s.clipBytes + extra > CLIP_WARN_BYTES) return `Clips belegen ${sizeLabel(s.clipBytes + extra)}. Kurze Clips (wenige Sekunden pro Abschnitt) halten die App schnell.`;
+  const media = s.clipBytes + (s.recBytes ?? 0);
+  if (media + extra > CLIP_WARN_BYTES) return `Clips und Aufnahmen belegen ${sizeLabel(media + extra)}. Kurze Clips (wenige Sekunden pro Abschnitt) und kurze Aufnahmen halten die App schnell.`;
   return null;
 }
 
@@ -228,12 +245,24 @@ export function clipFileName(meta: ClipMeta, type: string): string {
   return `skills-clip_${meta.id}_${base}.${ext}`;
 }
 
+const AUDIO_EXT: Record<string, string> = { "audio/mp4": "m4a", "audio/aac": "aac", "audio/webm": "webm", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/wav": "wav" };
+
+export function recordingFileName(r: Pick<Recording, "id" | "name" | "mime">): string {
+  const base = r.name.replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "aufnahme";
+  const ext = AUDIO_EXT[r.mime.split(";")[0]] ?? "m4a";
+  return `skills-aufnahme_${r.id}_${base}.${ext}`;
+}
+
 export async function exportClipFiles(): Promise<File[]> {
   const parts = await db.parts.toArray();
   const files: File[] = [];
   for (const p of parts) for (const c of p.clips) {
     const b = await db.clipBlobs.get(c.id);
     if (b) files.push(new File([b.blob], clipFileName(c, b.blob.type), { type: b.blob.type || "video/mp4" }));
+  }
+  for (const r of await db.recordings.toArray()) {
+    const b = await db.recBlobs.get(r.id);
+    if (b) files.push(new File([b.blob], recordingFileName(r), { type: b.blob.type || r.mime || "audio/mp4" }));
   }
   return files;
 }
@@ -242,11 +271,16 @@ export async function exportClipFiles(): Promise<File[]> {
 export async function importClipFiles(files: File[]): Promise<{ matched: number; unmatched: number }> {
   const parts = await db.parts.toArray();
   const known = new Set(parts.flatMap((p) => p.clips.map((c) => c.id)));
+  const knownRec = new Set((await db.recordings.toCollection().primaryKeys()) as string[]);
   let matched = 0, unmatched = 0;
   for (const f of files) {
-    const id = /skills-clip_([a-z0-9]+)_/i.exec(f.name)?.[1];
-    if (id && known.has(id)) {
+    const m = /skills-(clip|aufnahme)_([a-z0-9]+)_/i.exec(f.name);
+    const id = m?.[2];
+    if (id && m?.[1].toLowerCase() === "clip" && known.has(id)) {
       await db.clipBlobs.put({ id, blob: f });
+      matched++;
+    } else if (id && m?.[1].toLowerCase() === "aufnahme" && knownRec.has(id)) {
+      await db.recBlobs.put({ id, blob: f });
       matched++;
     } else unmatched++;
   }
@@ -259,4 +293,68 @@ export async function missingClipIds(): Promise<Set<string>> {
   const ids = parts.flatMap((p) => p.clips.map((c) => c.id));
   const have = new Set((await db.clipBlobs.toCollection().primaryKeys()) as string[]);
   return new Set(ids.filter((id) => !have.has(id)));
+}
+
+/** Aufnahmen ohne Audiodatei (z. B. nach Backup-Import auf einem neuen Gerät). */
+export async function missingRecordingIds(): Promise<Set<string>> {
+  const ids = (await db.recordings.toCollection().primaryKeys()) as string[];
+  const have = new Set((await db.recBlobs.toCollection().primaryKeys()) as string[]);
+  return new Set(ids.filter((id) => !have.has(id)));
+}
+
+// ---------------- Selbstaufnahmen ----------------
+
+export async function recordingsOf(unitId: string, partId: string | null): Promise<Recording[]> {
+  const all = await db.recordings.where("unitId").equals(unitId).toArray();
+  return all.filter((r) => (r.partId ?? null) === partId).sort((a, b) => b.at - a.at);
+}
+
+export function defaultRecordingName(at: number): string {
+  const d = new Date(at);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `Aufnahme ${p(d.getDate())}.${p(d.getMonth() + 1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+export async function addRecording(input: { unitId: string; partId?: string | null; blob: Blob; duration: number; mime?: string }): Promise<Recording> {
+  const at = Date.now();
+  const rec: Recording = {
+    id: uid(), unitId: input.unitId, ...(input.partId ? { partId: input.partId } : {}), name: defaultRecordingName(at), note: "", at,
+    duration: Math.max(0, Math.round(input.duration * 10) / 10), size: input.blob.size, mime: input.mime || input.blob.type || "audio/mp4",
+  };
+  await db.transaction("rw", [db.recordings, db.recBlobs], async () => {
+    await db.recBlobs.put({ id: rec.id, blob: input.blob });
+    await db.recordings.add(rec);
+  });
+  return rec;
+}
+
+export async function updateRecording(id: string, patch: Partial<Pick<Recording, "name" | "note">>) {
+  const clean = { ...patch };
+  if (clean.name !== undefined && !clean.name.trim()) delete clean.name;
+  if (clean.name !== undefined) clean.name = clean.name.trim();
+  await db.recordings.update(id, clean);
+}
+
+export async function removeRecording(id: string): Promise<() => Promise<void>> {
+  const rec = await db.recordings.get(id);
+  const blob = await db.recBlobs.get(id);
+  await db.transaction("rw", [db.recordings, db.recBlobs], async () => {
+    await db.recBlobs.delete(id);
+    await db.recordings.delete(id);
+  });
+  return async () => {
+    await db.transaction("rw", [db.recordings, db.recBlobs], async () => {
+      if (rec) await db.recordings.put(rec);
+      if (blob) await db.recBlobs.put(blob);
+    });
+  };
+}
+
+// ---------------- Metronom pro Stück/Abschnitt ----------------
+
+export async function setPartMetronome(id: string, patch: { bpm?: number; meter?: string }) {
+  await db.parts.update(id, patch);
+}
+export async function setUnitMetronome(id: string, patch: { bpm?: number; meter?: string }) {
+  await db.units.update(id, patch);
 }

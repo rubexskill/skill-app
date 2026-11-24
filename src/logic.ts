@@ -175,7 +175,9 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
   const units = await db.units.where("skillId").equals(id).toArray();
   const parts = (await Promise.all(units.map((u) => db.parts.where("unitId").equals(u.id).toArray()))).flat();
   const blobs = (await db.clipBlobs.bulkGet(parts.flatMap((p) => p.clips.map((c) => c.id)))).filter((b): b is NonNullable<typeof b> => !!b);
-  const tables = [db.skills, db.sessions, db.checks, db.records, db.cards, db.units, db.parts, db.clipBlobs];
+  const recs = (await Promise.all(units.map((u) => db.recordings.where("unitId").equals(u.id).toArray()))).flat();
+  const recBlobs = (await db.recBlobs.bulkGet(recs.map((r) => r.id))).filter((b): b is NonNullable<typeof b> => !!b);
+  const tables = [db.skills, db.sessions, db.checks, db.records, db.cards, db.units, db.parts, db.clipBlobs, db.recordings, db.recBlobs];
   await db.transaction("rw", tables, async () => {
     await db.sessions.where("skillId").equals(id).delete();
     await db.checks.where("skillId").equals(id).delete();
@@ -183,6 +185,8 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
     await db.cards.where("skillId").equals(id).delete();
     await db.parts.bulkDelete(parts.map((p) => p.id));
     await db.clipBlobs.bulkDelete(blobs.map((b) => b.id));
+    await db.recBlobs.bulkDelete(recBlobs.map((b) => b.id));
+    await db.recordings.bulkDelete(recs.map((r) => r.id));
     await db.units.bulkDelete(units.map((u) => u.id));
     await db.skills.delete(id);
   });
@@ -196,6 +200,8 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
       await db.units.bulkPut(units);
       await db.parts.bulkPut(parts);
       await db.clipBlobs.bulkPut(blobs);
+      await db.recordings.bulkPut(recs);
+      await db.recBlobs.bulkPut(recBlobs);
     });
   };
 }
@@ -353,7 +359,7 @@ const BACKUP_FORMAT = "skill-app-backup";
 export async function exportBackup(): Promise<Blob> {
   const data = {
     format: BACKUP_FORMAT,
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     skills: await db.skills.toArray(),
     sessions: await db.sessions.toArray(),
@@ -369,6 +375,7 @@ export async function exportBackup(): Promise<Blob> {
     // Unterpunkte und Abschnitte samt Clip-Metadaten; die Videos selbst gehören nicht ins Backup
     units: await db.units.toArray(),
     parts: await db.parts.toArray(),
+    recordings: await db.recordings.toArray(),
     tombs: await db.tombs.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -414,6 +421,7 @@ type Backup = {
   cards?: unknown[];
   units?: unknown[];
   parts?: unknown[];
+  recordings?: unknown[];
   tombs?: unknown[];
   exportedAt: string;
 };
@@ -426,7 +434,7 @@ export async function readBackup(file: File): Promise<Backup> {
 
 /** Ersetzt alle Daten. Backups aus Version 1 werden um die neuen Felder ergänzt. */
 export async function restoreBackup(data: Backup) {
-  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.units, db.parts, db.tombs];
+  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.units, db.parts, db.recordings, db.tombs];
   // Fehlende Änderungszeit (alte Backups) aus dem Datum der Zeile schätzen
   const fix = <T,>(rows: unknown[] | undefined): T[] =>
     ((rows ?? []) as Record<string, number | undefined>[]).map((r) => (r.upd == null ? { ...r, upd: r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0 } : r)) as unknown as T[];
@@ -446,6 +454,7 @@ export async function restoreBackup(data: Backup) {
       await db.cards.bulkAdd(fix(data.cards));
       await db.units.bulkAdd(fix(data.units));
       await db.parts.bulkAdd(fix(data.parts));
+      await db.recordings.bulkAdd(fix(data.recordings));
       await db.tombs.bulkAdd((data.tombs ?? []) as never[]);
     }),
   );

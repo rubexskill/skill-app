@@ -116,3 +116,7 @@ export async function playTestTone(): Promise<AudioState> {
   await new Promise((r) => setTimeout(r, 150));
   return audioState();
 }
+
+/** Für andere Module (Metronom): der gemeinsame AudioContext, bereit zum Planen mit currentTime. */
+export const audioContext = (): AudioContext | null => ctx;
+export const readyAudio = ready;

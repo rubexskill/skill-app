@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, UNIT_STATUSES, UNIT_STATUS_LABEL, type ClipMeta, type Part, type Skill, type UnitStatus } from "../db";
 import { dayLabel, elapsedLabel, minutesLabel, bigTime } from "../logic";
 import {
   addClip, addLoop, addPartNote, addUnitNote, migrateUnitNote, removeUnitNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, LOOP_SPEEDS, movePart, missingClipIds, removeClip, removePartNote,
-  renameClip, setClipRange, sizeLabel, storageWarning, unitProgress, updatePart, updateUnit, type ClipStorage,
+  renameClip, setClipRange, setPartMetronome, setUnitMetronome, sizeLabel, storageWarning, unitProgress, updatePart, updateUnit, type ClipStorage,
 } from "../units";
 import { AutoTextarea, CheckCircle, Fold, Group, NavButton, NavPage, Row, Segmented, Sheet, Switch, SwipeRow, useNow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -13,6 +13,8 @@ import { catVars } from "../categories";
 import { useNav } from "../nav";
 import { useTimer } from "../timer";
 import { LinkSheet } from "./SkillSheets";
+import { MetronomeFold, RecordingsFold } from "./Practice";
+import { effectiveMetronome } from "../metronome";
 import { CatBadge, NextNoteCard, Ring } from "./parts";
 
 const host = (url: string) => {
@@ -108,6 +110,7 @@ export function UnitPage({ id }: { id: string }) {
   const [title, setTitle] = useState("");
   const [draft, setDraft] = useState("");
   const loaded = useRef<string | null>(null);
+  const saveUnitMetro = useCallback((patch: { bpm?: number; meter?: string }) => void setUnitMetronome(id, patch), [id]);
 
   useEffect(() => {
     if (unit && loaded.current !== unit.id) { loaded.current = unit.id; setTitle(unit.title); void migrateUnitNote(unit); }
@@ -118,6 +121,7 @@ export function UnitPage({ id }: { id: string }) {
   if (!unit || !skill) return <NavPage title="" back={back}><div /></NavPage>;
 
   const total = (sessions ?? []).reduce((n, s) => n + s.minutes, 0);
+  const um = effectiveMetronome(null, unit);
   const pr = unitProgress(parts ?? []);
   const t = bigTime(total);
   const elapsed = running ? now - skill.timerStart! : 0;
@@ -203,6 +207,9 @@ export function UnitPage({ id }: { id: string }) {
           ))}
         </section>
 
+        <MetronomeFold bpm={um.bpm} meter={um.meter} onSave={saveUnitMetro} />
+        <RecordingsFold unitId={id} partId={null} />
+
         <Fold title="Notizen zum Stück" icon="note" summary={unit.notes?.length ? String(unit.notes.length) : ""}>
           <Group>
             <div className="row input-row compose">
@@ -254,6 +261,8 @@ export function PartPage({ id }: { id: string }) {
   const [draft, setDraft] = useState("");
   const [linkOpen, setLinkOpen] = useState(false);
   const [player, setPlayer] = useState<string | null>(null);
+  const [autoplay, setAutoplay] = useState(false);
+  const savePartMetro = useCallback((patch: { bpm?: number; meter?: string }) => void setPartMetronome(id, patch), [id]);
   const [storage, setStorage] = useState<ClipStorage | null>(null);
   const missing = useLiveQuery(() => missingClipIds(), [part?.clips.length]);
   const loaded = useRef<string | null>(null);
@@ -292,6 +301,7 @@ export function PartPage({ id }: { id: string }) {
       ],
     });
 
+  const pm = effectiveMetronome(part, unit);
   const warn = storage ? storageWarning(storage) : null;
   const playerClip = part.clips.find((c) => c.id === player) ?? null;
 
@@ -325,6 +335,10 @@ export function PartPage({ id }: { id: string }) {
         <input ref={pickRef} type="file" accept="video/*" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
         <input ref={camRef} type="file" accept="video/*" capture="environment" hidden onChange={(e) => void addFiles(e.target.files)} />
 
+        <MetronomeFold bpm={pm.bpm} meter={pm.meter} onSave={savePartMetro} hasClip={part.clips.length > 0}
+          onStartWithClip={() => { setAutoplay(true); setPlayer(part.clips[0]?.id ?? null); }} />
+        <RecordingsFold unitId={part.unitId} partId={id} />
+
         <Group className="is-card" header="Notizen">
           <div className="row input-row compose">
             <AutoTextarea value={draft} placeholder="Neue Notiz …" onChange={(e) => setDraft(e.target.value)} />
@@ -355,7 +369,7 @@ export function PartPage({ id }: { id: string }) {
         </Group>
       </div>
       <LinkSheet open={linkOpen} onClose={() => setLinkOpen(false)} onSave={(url, title) => void updatePart(id, { links: [...part.links, { id: uid(), url, title, addedAt: Date.now() }] })} />
-      <ClipPlayer open={!!playerClip} onClose={() => setPlayer(null)} part={part} clip={playerClip} />
+      <ClipPlayer open={!!playerClip} onClose={() => { setPlayer(null); setAutoplay(false); }} part={part} clip={playerClip} autoplay={autoplay} />
     </NavPage>
   );
 }
@@ -364,7 +378,7 @@ export function PartPage({ id }: { id: string }) {
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-function ClipPlayer({ open, onClose, part, clip }: { open: boolean; onClose: () => void; part: Part; clip: ClipMeta | null }) {
+function ClipPlayer({ open, onClose, part, clip, autoplay }: { open: boolean; onClose: () => void; part: Part; clip: ClipMeta | null; autoplay?: boolean }) {
   const [shown, setShown] = useState<ClipMeta | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [absent, setAbsent] = useState(false);
@@ -409,6 +423,7 @@ function ClipPlayer({ open, onClose, part, clip }: { open: boolean; onClose: () 
     const v = video.current;
     if (!v) return;
     apply();
+    if (autoplay) void v.play().catch(() => undefined);
     const d = v.duration;
     if (isFinite(d)) {
       setDuration(d);

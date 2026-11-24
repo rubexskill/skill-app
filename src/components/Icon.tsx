@@ -326,6 +326,19 @@ const ICONS: Record<string, ReactNode> = {
       <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
     </g>
   ),
+  metronome: (
+    <g {...S}>
+      <path d="M8.2 20.5L10.4 4.5h3.2l2.2 16z" />
+      <path d="M12 16.5l3.4-8" />
+      <path d="M6.5 20.5h11" />
+    </g>
+  ),
+  mic: (
+    <g {...S}>
+      <rect x="9" y="3.5" width="6" height="11" rx="3" />
+      <path d="M6 11.5a6 6 0 0 0 12 0M12 17.5v3M9 20.5h6" />
+    </g>
+  ),
   undo: (
     <g {...S}>
       <path d="M9 6.5L4.5 11 9 15.5" />
