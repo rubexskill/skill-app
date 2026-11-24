@@ -117,6 +117,15 @@ export async function playTestTone(): Promise<AudioState> {
   return audioState();
 }
 
+/** Audio-Uhr anhalten (z. B. vor dem Aufnehmen), damit iOS das Mikrofon freigibt. Das nächste Antippen weckt sie wieder. */
+export function suspendAudio(): void {
+  try {
+    if (keepAlive) keepAlive.dataset.on = "0";
+    keepAlive?.pause();
+    if (ctx && ctx.state === "running") void ctx.suspend().catch(() => undefined);
+  } catch { /* egal */ }
+}
+
 /** Für andere Module (Metronom): der gemeinsame AudioContext, bereit zum Planen mit currentTime. */
 export const audioContext = (): AudioContext | null => ctx;
 export const readyAudio = ready;

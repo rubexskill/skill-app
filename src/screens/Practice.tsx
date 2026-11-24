@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Recording } from "../db";
 import { dayLabel, loadSetting, saveSetting, timeLabel } from "../logic";
-import { Metronome, BPM_MAX, BPM_MIN, METERS, clampBpm, meterOf } from "../metronome";
-import { RECORDER_HINT, recorderSupported, startRecording, type ActiveRecording, type RecorderFailure } from "../recorder";
-import { addRecording, clipStorage, missingRecordingIds, recordingsOf, removeRecording, sizeLabel, storageWarning, updateRecording, type ClipStorage } from "../units";
+import { Metronome, BPM_MAX, BPM_MIN, METERS, clampBpm, meterOf, stopAllMetronomes } from "../metronome";
+import { RECORDER_HINT, errorTip, recorderSupported, startRecording, type ActiveRecording, type RecorderError } from "../recorder";
+import { addRecording, clipStorage, missingRecordingIds, recordingsOf, recordingsOfUnit, removeRecording, removeRecordings, sizeLabel, storageWarning, updateRecording, type ClipStorage } from "../units";
 import { AutoTextarea, Fold, Group, Row, Sheet, Switch, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { Wheel } from "../components/Wheel";
@@ -34,6 +34,7 @@ export function MetronomeFold({ bpm, meter, onSave, hasClip, onStartWithClip }: 
   useEffect(() => {
     const m = engine.current!;
     m.onBeat = (b) => { setBeat(b); window.setTimeout(() => setBeat((cur) => (cur === b ? null : cur)), 110); };
+    m.onStop = () => { setRunning(false); setBeat(null); };
     return () => m.stop();
   }, []);
   useEffect(() => { engine.current!.setBpm(value); }, [value]);
@@ -96,13 +97,15 @@ export function MetronomeFold({ bpm, meter, onSave, hasClip, onStartWithClip }: 
 // ---------------- Aufnahmen ----------------
 
 export function RecordingsFold({ unitId, partId }: { unitId: string; partId: string | null }) {
-  const { toast, undoable } = useUI();
+  const { toast, undoable, actionSheet } = useUI();
   const recs = useLiveQuery(() => recordingsOf(unitId, partId), [unitId, partId]);
+  const unitRecs = useLiveQuery(() => recordingsOfUnit(unitId), [unitId]);
   const missing = useLiveQuery(() => missingRecordingIds(), [recs?.length]);
   const [storage, setStorage] = useState<ClipStorage | null>(null);
   const [active, setActive] = useState<ActiveRecording | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ name: string; tip: string } | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const [editing, setEditing] = useState<Recording | null>(null);
   const [compare, setCompare] = useState(false);
@@ -138,18 +141,22 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
     void a.play().catch(() => stopPlayback());
   };
 
-  const begin = async () => {
+  /** Direkt im Tipp-Handler, ohne vorheriges await: iOS verlangt die Berührung für den Mikrofonzugriff. */
+  const begin = () => {
     setHint(null);
-    const warn = storageWarning(await clipStorage(), 5 * 1024 * 1024);
+    setDetail(null);
+    stopAllMetronomes();
+    stopPlayback();
+    const warn = storage ? storageWarning(storage, 5 * 1024 * 1024) : null;
     if (warn && warn.startsWith("Dafür ist nicht genug")) return setHint(warn);
-    try {
-      stopPlayback();
-      const rec = await startRecording();
-      setElapsed(0);
-      setActive(rec);
-    } catch (err) {
-      setHint(RECORDER_HINT[(err as { failure?: RecorderFailure })?.failure ?? "other"]);
-    }
+    startRecording().then(
+      (rec) => { setElapsed(0); setActive(rec); },
+      (err: RecorderError) => {
+        const name = err?.name ?? "Unbekannt";
+        setHint(RECORDER_HINT[err?.failure ?? "other"]);
+        setDetail({ name, tip: errorTip(name) });
+      },
+    );
   };
 
   const finish = async () => {
@@ -157,10 +164,30 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
     if (!a) return;
     setActive(null);
     const { blob, duration, mime } = await a.stop();
-    if (!blob.size) return setHint("Es wurde nichts aufgenommen.");
+    if (!blob.size) { setDetail({ name: "LeereAufnahme", tip: "Das Mikrofon hat nichts geliefert. Beende andere Audio-Apps und versuche es noch einmal." }); return setHint("Es wurde nichts aufgenommen."); }
     await addRecording({ unitId, partId, blob, duration, mime });
     const warn = storageWarning(await clipStorage());
     toast(warn ?? "Aufnahme gespeichert – nur auf diesem Gerät.");
+  };
+
+  const removeOne = (r: Recording) => {
+    if (playing === r.id) stopPlayback();
+    undoable("Aufnahme gelöscht", () => removeRecording(r.id));
+  };
+  const removeMany = (ids: string[], text: string) => {
+    stopPlayback();
+    undoable(text, () => removeRecordings(ids));
+  };
+  const menuAll = () => {
+    const here = recs ?? [];
+    const whole = unitRecs ?? [];
+    const choices = [
+      { label: `Alle ${here.length} Aufnahmen hier löschen`, destructive: true, onSelect: () => removeMany(here.map((r) => r.id), `${here.length} Aufnahmen gelöscht`) },
+    ];
+    if (partId === null && whole.length > here.length) {
+      choices.push({ label: `Alle ${whole.length} Aufnahmen des Stücks löschen (mit Abschnitten)`, destructive: true, onSelect: () => removeMany(whole.map((r) => r.id), `${whole.length} Aufnahmen gelöscht`) });
+    }
+    actionSheet({ title: "Aufnahmen", message: "Danach ist „Rückgängig“ noch kurz möglich.", choices });
   };
 
   const unsupported = !recorderSupported();
@@ -168,10 +195,11 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
   const warn = storage ? storageWarning(storage) : null;
 
   return (
-    <Fold title="Aufnahmen" icon="mic" summary={recs?.length ? String(recs.length) : ""}>
-      <Group footer={storage ? (
+    <Fold title="Aufnahmen" icon="mic" summary={recs?.length ? String(recs.length) : ""}
+      menu={(recs?.length ?? 0) > 0 ? { label: "Mehr zu den Aufnahmen", onClick: menuAll } : undefined}>
+      <Group footer={storage && ((storage.recCount ?? 0) > 0 || warn) ? (
         <span className={warn ? "clip-warn" : undefined}>
-          {sizeLabel(storage.recBytes ?? 0)} Aufnahmen{media > (storage.recBytes ?? 0) ? `, insgesamt ${sizeLabel(media)} mit Clips` : ""}. {warn ?? "Nur auf diesem Gerät, kein Upload."}
+          {(storage.recCount ?? 0) > 0 ? `${sizeLabel(storage.recBytes ?? 0)} Aufnahmen${media > (storage.recBytes ?? 0) ? `, insgesamt ${sizeLabel(media)} mit Clips` : ""}. ` : ""}{warn ?? "Nur auf diesem Gerät, kein Upload."}
         </span>
       ) : undefined}>
         {active ? (
@@ -182,12 +210,19 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
             <button className="rec-stop" onClick={() => void finish()}>Stopp</button>
           </div>
         ) : (
-          <Row title="Aufnahme starten" tone={unsupported ? undefined : "accent"} leading={<Icon name="mic" size={18} />} onClick={unsupported ? undefined : () => void begin()}
+          <Row title="Aufnahme starten" tone={unsupported ? undefined : "accent"} leading={<Icon name="mic" size={18} />} onClick={unsupported ? undefined : begin}
             subtitle={unsupported ? RECORDER_HINT.unsupported : undefined} />
         )}
-        {hint && <div className="row rec-hint">{hint}</div>}
+        {hint && (
+          <div className="row rec-hint">
+            <div>
+              {hint}
+              {detail && <small className="rec-detail"><b>Fehler: {detail.name}</b> · {detail.tip}</small>}
+            </div>
+          </div>
+        )}
         {(recs ?? []).map((r) => (
-          <SwipeRow key={r.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => { if (playing === r.id) stopPlayback(); undoable("Aufnahme gelöscht", () => removeRecording(r.id)); } }]}>
+          <SwipeRow key={r.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeOne(r) }]}>
             <Row title={r.name} muted={missing?.has(r.id)}
               subtitle={missing?.has(r.id) ? "Aufnahme fehlt auf diesem Gerät" : `${dayLabel(r.at)}, ${timeLabel(r.at)} · ${fmtDur(r.duration)} · ${sizeLabel(r.size)}${r.note ? " · Notiz" : ""}`}
               leading={
@@ -196,6 +231,7 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
                   <Icon name={playing === r.id ? "pause" : "play"} size={15} />
                 </button>
               }
+              trailing={<button className="rec-del" aria-label={`${r.name} löschen`} onClick={(e) => { e.stopPropagation(); removeOne(r); }}><Icon name="trash" size={17} /></button>}
               onClick={() => setEditing(r)} />
           </SwipeRow>
         ))}

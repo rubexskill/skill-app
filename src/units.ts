@@ -154,6 +154,8 @@ export interface ClipStorage {
   clipBytes: number;
   /** Aufnahmen */
   recBytes?: number;
+  /** Anzahl der Aufnahmen (alle Stücke) */
+  recCount?: number;
   count: number;
   usage?: number;
   quota?: number;
@@ -164,10 +166,10 @@ export async function clipStorage(): Promise<ClipStorage> {
   const metas = parts.flatMap((p) => p.clips);
   const recs = await db.recordings.toArray();
   const est = await navigator.storage?.estimate?.().catch(() => undefined);
-  return { clipBytes: metas.reduce((n, c) => n + c.size, 0), recBytes: recs.reduce((n, r) => n + r.size, 0), count: metas.length + recs.length, usage: est?.usage, quota: est?.quota };
+  return { clipBytes: metas.reduce((n, c) => n + c.size, 0), recBytes: recs.reduce((n, r) => n + r.size, 0), recCount: recs.length, count: metas.length + recs.length, usage: est?.usage, quota: est?.quota };
 }
 
-export const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : bytes >= 1024 * 1024 ? `${Math.round(bytes / 1024 / 1024)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`).replace(".", ",");
+export const sizeLabel = (bytes: number) => (bytes <= 0 ? "0 KB" : bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : bytes >= 1024 * 1024 ? `${Math.round(bytes / 1024 / 1024)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`).replace(".", ",");
 
 /** Hinweis zum Speicher oder null, wenn alles in Ordnung ist. */
 export function storageWarning(s: ClipStorage, extra = 0): string | null {
@@ -307,6 +309,27 @@ export async function missingRecordingIds(): Promise<Set<string>> {
 export async function recordingsOf(unitId: string, partId: string | null): Promise<Recording[]> {
   const all = await db.recordings.where("unitId").equals(unitId).toArray();
   return all.filter((r) => (r.partId ?? null) === partId).sort((a, b) => b.at - a.at);
+}
+
+/** Alle Aufnahmen eines Stücks (mit allen Abschnitten) oder einer Auswahl. */
+export async function recordingsOfUnit(unitId: string): Promise<Recording[]> {
+  return db.recordings.where("unitId").equals(unitId).toArray();
+}
+
+/** Mehrere Aufnahmen auf einmal löschen. Gibt „Rückgängig“ zurück. */
+export async function removeRecordings(ids: string[]): Promise<() => Promise<void>> {
+  const recs = (await db.recordings.bulkGet(ids)).filter((r): r is Recording => !!r);
+  const blobs = (await db.recBlobs.bulkGet(ids)).filter((b): b is NonNullable<typeof b> => !!b);
+  await db.transaction("rw", [db.recordings, db.recBlobs], async () => {
+    await db.recBlobs.bulkDelete(blobs.map((b) => b.id));
+    await db.recordings.bulkDelete(recs.map((r) => r.id));
+  });
+  return async () => {
+    await db.transaction("rw", [db.recordings, db.recBlobs], async () => {
+      await db.recordings.bulkPut(recs);
+      await db.recBlobs.bulkPut(blobs);
+    });
+  };
 }
 
 export function defaultRecordingName(at: number): string {

@@ -198,6 +198,26 @@ async function run() {
       await head.scrollIntoViewIfNeeded(); await head.click(); await page.waitForTimeout(350);
       await check(`Unterpunkt ${name} offen`);
     }
+    // Aufnahmen: Löschen-Knopf je Zeile, „···“-Menü, Fehlerdetail beim Start (Chromium ohne Mikrofon)
+    const top = page.locator('.page[aria-hidden="false"]');
+    const delBtns = await top.locator(".rec-del").count();
+    const moreBtn = await top.locator(".fold-more").count();
+    if (delBtns < 1 || moreBtn < 1) failures.push(`${width}px · Aufnahmen: Löschen-Knopf ${delBtns}, Menü ${moreBtn}`);
+    await top.locator(".rec-del").first().click(); await page.waitForTimeout(400);
+    const left = await page.evaluate(() => window.db.recordings.where("unitId").equals("u1").count());
+    if (left !== 2) failures.push(`${width}px · Löschen-Knopf entfernt nicht (übrig ${left})`);
+    await page.locator(".toast-action").click(); await page.waitForTimeout(400);
+    const back = await page.evaluate(() => window.db.recordings.where("unitId").equals("u1").count());
+    if (back !== 3) failures.push(`${width}px · Rückgängig stellt nicht her (${back})`);
+    await top.getByText("Aufnahme starten").click(); await page.waitForTimeout(900);
+    const detailText = await top.locator(".rec-detail").first().textContent().catch(() => null);
+    if (!detailText || !/Fehler: \w+/.test(detailText)) failures.push(`${width}px · Fehlerdetail fehlt: ${detailText}`);
+    await check("Unterpunkt Aufnahme-Fehler");
+    // ohne Aufnahmen keine Größenangabe
+    await page.evaluate(() => window.db.recordings.clear()); await page.waitForTimeout(500);
+    const footerText = await top.locator(".fold-body .group-footer").allTextContents();
+    if (footerText.some((t) => /KB Aufnahmen|MB Aufnahmen/.test(t))) failures.push(`${width}px · Größe trotz fehlender Aufnahmen: ${footerText.join("|")}`);
+    await page.evaluate(() => window.db.recordings.bulkAdd([{ id: "rc1", unitId: "u1", name: "Aufnahme Test", note: "", at: Date.now(), duration: 10, size: 1500000, mime: "audio/mp4" }])); await page.waitForTimeout(500);
     // Metronom: Rad drehen (Tempo wird pro Stück gemerkt), starten und stoppen
     await page.locator('.page[aria-hidden="false"] .wheel-scroll').first().evaluate((el) => { el.scrollTop = (150 - 30) * 40; });
     await page.waitForTimeout(700);

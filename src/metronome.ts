@@ -1,4 +1,4 @@
-import { prepareAudio, readyAudio, releaseAudio } from "./trainer/audio";
+import { prepareAudio, readyAudio, releaseAudio, suspendAudio } from "./trainer/audio";
 
 /** Metronom: BPM-Grenzen, Taktarten, genaue Planung über AudioContext.currentTime (kein setInterval für den Takt). */
 
@@ -60,6 +60,16 @@ export function planClicks(next: { time: number; beat: number }, bpm: number, be
 const LOOKAHEAD = 0.14; // s
 const TICK_MS = 30;
 
+const instances = new Set<Metronome>();
+/** Läuft irgendwo ein Metronom? */
+export const metronomeRunning = (): boolean => [...instances].some((m) => m.running);
+/** Stoppt jedes laufende Metronom (z. B. vor einer Aufnahme) und gibt das Audio frei. */
+export function stopAllMetronomes(): void {
+  const was = metronomeRunning();
+  [...instances].forEach((m) => m.stop());
+  if (was) suspendAudio();
+}
+
 export class Metronome {
   private ctx: AudioContext | null = null;
   private timer = 0;
@@ -70,6 +80,8 @@ export class Metronome {
   beats = 4;
   muted = false;
   onBeat: (beat: number) => void = () => {};
+  /** Wird aufgerufen, wenn das Metronom von außen gestoppt wurde */
+  onStop: () => void = () => {};
   private wake = () => {
     // Nach App-Wechsel läuft die Audio-Uhr weiter oder stand still: neu aufsetzen, damit nichts aufholt
     if (document.visibilityState !== "visible" || !this.running || !this.ctx) return;
@@ -84,9 +96,10 @@ export class Metronome {
     this.bpm = clampBpm(bpm);
     this.beats = beats;
     this.running = true;
+    instances.add(this);
     void readyAudio().then((c) => {
       if (!this.running) return;
-      if (!c) { this.running = false; return; }
+      if (!c) { this.running = false; instances.delete(this); this.onStop(); return; }
       this.ctx = c;
       this.next = { time: c.currentTime + 0.08, beat: 0 };
       document.addEventListener("visibilitychange", this.wake);
@@ -96,13 +109,16 @@ export class Metronome {
   }
 
   stop(): void {
+    const was = this.running;
     this.running = false;
+    instances.delete(this);
     window.clearTimeout(this.timer);
     this.blinkTimers.forEach((t) => window.clearTimeout(t));
     this.blinkTimers.clear();
-    document.removeEventListener("visibilitychange", this.wake);
-    window.removeEventListener("pageshow", this.wake);
+    if (typeof document !== "undefined" && typeof document.removeEventListener === "function") document.removeEventListener("visibilitychange", this.wake);
+    if (typeof window !== "undefined" && typeof window.removeEventListener === "function") window.removeEventListener("pageshow", this.wake);
     releaseAudio();
+    if (was) this.onStop();
   }
 
   setBpm(bpm: number) { this.bpm = clampBpm(bpm); }

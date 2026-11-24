@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { createSkill, deleteSkill, exportBackup, readBackup, restoreBackup } from "../src/logic";
 import { BPM_MAX, BPM_MIN, METERS, clampBpm, effectiveMetronome, meterOf, planClicks, wheelFromScroll, wheelIndex, wheelValue } from "../src/metronome";
-import { RECORDER_TYPES, failureOf, pickRecorderMime } from "../src/recorder";
+import { RECORDER_HINT, RECORDER_TYPES, errorName, errorTip, failureOf, pickRecorderMime } from "../src/recorder";
+import { Metronome, metronomeRunning, stopAllMetronomes } from "../src/metronome";
 import {
   addRecording, createPart, createUnit, deletePart, deleteUnit, exportClipFiles, importClipFiles, missingRecordingIds, recordingFileName, recordingsOf,
-  removeRecording, setPartMetronome, setUnitMetronome, storageWarning, updateRecording,
+  recordingsOfUnit, removeRecording, removeRecordings, setPartMetronome, sizeLabel, setUnitMetronome, storageWarning, updateRecording,
 } from "../src/units";
 import { applySync, exportSync, parseSync } from "../src/sync";
 
@@ -162,6 +163,82 @@ describe("Aufnahmen", () => {
   it("warnt bei großen Aufnahmen wie bei Clips", () => {
     expect(storageWarning({ clipBytes: 0, recBytes: 90 * 1024 * 1024, count: 3 }, 20 * 1024 * 1024)).toContain("Aufnahmen");
     expect(storageWarning({ clipBytes: 10, recBytes: 10, count: 1 })).toBeNull();
+  });
+
+  it("Format: mp4, dann webm/opus, dann aac, sonst Standard des Browsers", () => {
+    expect(RECORDER_TYPES).toEqual(["audio/mp4", "audio/webm;codecs=opus", "audio/aac", "audio/webm"]);
+    expect(pickRecorderMime((t) => t === "audio/aac")).toBe("audio/aac");
+    expect(pickRecorderMime((t) => t === "audio/webm")).toBe("audio/webm");
+    expect(pickRecorderMime((t) => t === "audio/mp4" || t === "audio/aac")).toBe("audio/mp4");
+    expect(pickRecorderMime(() => { throw new Error("kaputt"); })).toBeUndefined();
+  });
+
+  it("Fehlernamen werden ruhig erklärt: Gruppe, Hinweis und ein Satz Hilfe", () => {
+    const cases: [string, string, RegExp][] = [
+      ["NotAllowedError", "denied", /iOS-Einstellungen unter Apps → Safari/],
+      ["NotFoundError", "none", /Mikrofon vorhanden/],
+      ["NotReadableError", "busy", /andere App/i],
+      ["SecurityError", "security", /https/],
+      ["NotSupportedError", "unsupported", /Format/],
+      ["AbortError", "busy", /unterbrochen/],
+      ["InvalidStateError", "other", /Metronom/],
+    ];
+    for (const [name, failure, tip] of cases) {
+      expect(failureOf({ name })).toBe(failure);
+      expect(errorTip(name)).toMatch(tip);
+      expect(RECORDER_HINT[failure as keyof typeof RECORDER_HINT].length).toBeGreaterThan(10);
+    }
+    expect(errorName({ name: "NotAllowedError" })).toBe("NotAllowedError");
+    expect(errorName({ failureName: "X", name: "Y" })).toBe("X");
+    expect(errorName(null)).toBe("Unbekannt");
+    expect(errorTip("Unbekanntes")).toMatch(/Neustart/);
+  });
+
+  it("Größenangabe: 0 Byte ist „0 KB“, nie „1 KB“", () => {
+    expect(sizeLabel(0)).toBe("0 KB");
+    expect(sizeLabel(10)).toBe("1 KB");
+    expect(sizeLabel(5 * 1024 * 1024)).toBe("5 MB");
+  });
+
+  it("löscht einzeln, alle eines Stücks und bringt alles zurück", async () => {
+    const { u, p } = await setup();
+    const a = await addRecording({ unitId: u.id, partId: null, blob: audio(), duration: 0 }); // Probeaufnahme mit Dauer 0
+    const b = await addRecording({ unitId: u.id, partId: null, blob: audio(5), duration: 0.2 });
+    const c = await addRecording({ unitId: u.id, partId: p.id, blob: audio(), duration: 8 });
+    expect((await recordingsOfUnit(u.id)).length).toBe(3);
+    // einzeln, auch sehr kurze
+    let undo = await removeRecording(a.id);
+    expect(await db.recordings.get(a.id)).toBeUndefined();
+    await undo();
+    expect(await db.recordings.get(a.id)).toBeTruthy();
+    // alle hier (Stück-Ebene)
+    undo = await removeRecordings((await recordingsOf(u.id, null)).map((r) => r.id));
+    expect([await db.recordings.count(), await db.recBlobs.count()]).toEqual([1, 1]);
+    expect((await db.recordings.get(c.id))?.partId).toBe(p.id);
+    await undo();
+    expect([await db.recordings.count(), await db.recBlobs.count()]).toEqual([3, 3]);
+    // alle des Stücks inklusive Abschnitte
+    undo = await removeRecordings((await recordingsOfUnit(u.id)).map((r) => r.id));
+    expect([await db.recordings.count(), await db.recBlobs.count()]).toEqual([0, 0]);
+    await undo();
+    expect([await db.recordings.count(), await db.recBlobs.count()]).toEqual([3, 3]);
+    expect((await db.recordings.get(b.id))!.duration).toBe(0.2);
+    await removeRecordings([]); // leer: nichts passiert
+    expect(await db.recordings.count()).toBe(3);
+  });
+
+  it("Das Metronom lässt sich vor einer Aufnahme von außen stoppen", () => {
+    const m = new Metronome();
+    let stopped = 0;
+    m.onStop = () => { stopped++; };
+    m.start(100, 4);
+    expect(metronomeRunning()).toBe(true);
+    stopAllMetronomes();
+    expect(metronomeRunning()).toBe(false);
+    expect(m.running).toBe(false);
+    expect(stopped).toBe(1);
+    stopAllMetronomes(); // nichts läuft: kein zweiter Aufruf
+    expect(stopped).toBe(1);
   });
 
   it("Aufnahme-Format und ruhige Fehlertexte", () => {

@@ -1644,3 +1644,11 @@ html, body, #root { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x:
 .cmp-tag { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 50%; background: var(--fill); font-family: var(--rounded); font-size: 12px; }
 .cmp-play { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 16px 12px; }
 .cmp-state { font-size: var(--fs-s); color: var(--label-2); text-align: center; overflow-wrap: anywhere; }
+.fold-bar { display: flex; align-items: center; }
+.fold-bar .fold-head { flex: 1 1 0; min-width: 0; }
+.fold-more { flex: none; width: 48px; height: 52px; border: 0; background: none; color: var(--label-2); font-size: 18px; letter-spacing: 1px; display: grid; place-items: center; }
+.fold-more:active { opacity: 0.4; }
+.rec-del { width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--label-3); display: grid; place-items: center; }
+.rec-del:active { background: var(--fill); color: var(--danger); }
+.rec-detail { display: block; margin-top: 4px; color: var(--label-2); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.rec-detail b { font-weight: 600; color: var(--label); }
