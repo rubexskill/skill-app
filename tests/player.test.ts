@@ -97,3 +97,21 @@ describe("Schleife ohne Pause", () => {
     expect((await db.parts.get(p.id))!.loops).toBe(14);
   });
 });
+
+describe("Wisch-Aktion morgen", () => {
+  it("setzt das Datum auf morgen (mit und ohne vorhandenes Datum), Rückgängig stellt das alte her", async () => {
+    const { addTodo, addDays, dayKey } = await import("../src/logic");
+    const t1 = await addTodo("ohne Datum", "list-allgemein", null);
+    const t2 = await addTodo("mit Datum", "list-allgemein", "2030-01-05");
+    const tomorrow = dayKey(addDays(new Date(), 1));
+    for (const t of [t1, t2]) {
+      const prev = t.due;
+      await db.todos.update(t.id, { due: tomorrow });
+      expect((await db.todos.get(t.id))!.due).toBe(tomorrow);
+      await db.todos.update(t.id, { due: prev });
+      expect((await db.todos.get(t.id))!.due).toBe(prev);
+    }
+    const { allBucket } = await import("../src/todoview");
+    expect(allBucket(tomorrow)).toBe("tomorrow");
+  });
+});

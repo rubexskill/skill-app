@@ -187,14 +187,15 @@ export function Row({ title, subtitle, detail, leading, trailing, chevron, onCli
 
 export interface SwipeAction {
   label: string;
-  tone: "danger" | "accent" | "gray" | "ok";
+  tone: "danger" | "accent" | "gray" | "ok" | "soft-danger" | "soft";
+  icon?: string;
   onClick: () => void;
 }
 
 const ACTION_W = 82;
 
 /** `leading`: Aktion beim Wischen nach rechts (z. B. „Erledigt“); weit durchwischen löst sie aus. */
-export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[]; leading?: SwipeAction; children: ReactNode }) {
+export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }: { actions: SwipeAction[]; leading?: SwipeAction; /** Anteil der Breite, ab dem die Aktion auslöst; ohne Wert: klassische Aktionsknöpfe. Mit Wert federt die Zeile sonst zurück. */ trigger?: number; style?: React.CSSProperties; onSwipe?: () => void; children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef(0);
@@ -205,6 +206,10 @@ export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[
   const leadingRef = useRef(leading);
   leadingRef.current = leading;
   const myId = useRef(Math.random());
+  const triggerRef = useRef(trigger);
+  const onSwipeRef = useRef(onSwipe);
+  onSwipeRef.current = onSwipe;
+  triggerRef.current = trigger;
 
   useEffect(() => {
     const close = (e: Event) => {
@@ -246,14 +251,22 @@ export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[
     if (!s.lock) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return false;
       s.lock = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      if (s.lock === "x") window.dispatchEvent(new CustomEvent("swiperow-open", { detail: myId.current }));
+      if (s.lock === "x") { window.dispatchEvent(new CustomEvent("swiperow-open", { detail: myId.current })); onSwipeRef.current?.(); }
     }
     if (s.lock !== "x") return false;
     s.moved = true;
     lastX.current = x;
     let pos = s.base + dx;
-    if (pos > 0) pos = leadingRef.current ? pos : pos / 4;
-    if (pos < -max) pos = -max + (pos + max) / 3;
+    const th = triggerRef.current;
+    if (th) {
+      const w = contentRef.current?.offsetWidth ?? 320;
+      const lim = w * 0.7;
+      if (pos > 0) pos = leadingRef.current ? Math.min(pos, lim + (pos - lim) / 4) : pos / 6;
+      if (pos < -lim) pos = -lim + (pos + lim) / 4;
+    } else {
+      if (pos > 0) pos = leadingRef.current ? pos : pos / 4;
+      if (pos < -max) pos = -max + (pos + max) / 3;
+    }
     apply(pos, false);
     return true;
   };
@@ -266,6 +279,17 @@ export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[
     const width = contentRef.current?.offsetWidth ?? 320;
     const el = contentRef.current;
     if (el) el.style.transition = "";
+    const th = triggerRef.current;
+    if (th) {
+      if (leadingRef.current && pos > width * th) {
+        apply(width, true);
+        window.setTimeout(() => { leadingRef.current?.onClick(); apply(0, false); setOffset(0); }, 200);
+      } else if (pos < -width * th) {
+        apply(-width, true);
+        window.setTimeout(() => { actionsRef.current[0].onClick(); apply(0, false); setOffset(0); }, 200);
+      } else { apply(0, true); setOffset(0); }
+      return;
+    }
     if (leadingRef.current && pos > width * 0.42) {
       apply(width, true);
       window.setTimeout(() => { leadingRef.current?.onClick(); apply(0, false); setOffset(0); }, 220);
@@ -328,16 +352,18 @@ export function SwipeRow({ actions, leading, children }: { actions: SwipeAction[
   };
 
   return (
-    <div ref={wrapRef} className="swipe">
+    <div ref={wrapRef} className={`swipe${trigger ? " is-quick" : ""}`} style={style}>
       {leading && (
         <div className={`swipe-lead tone-${leading.tone}`}>
-          <button className={`swipe-action tone-${leading.tone}`} style={{ width: lead }} onClick={() => { apply(0, true); setOffset(0); leading.onClick(); }}>{leading.label}</button>
+          <button className={`swipe-action tone-${leading.tone}`} style={trigger ? undefined : { width: lead }} tabIndex={trigger ? -1 : 0} onClick={() => { apply(0, true); setOffset(0); leading.onClick(); }}>
+            {leading.icon && <Icon name={leading.icon} size={18} />}<span>{leading.label}</span>
+          </button>
         </div>
       )}
-      <div className="swipe-actions" style={{ width: max }}>
+      <div className={`swipe-actions${trigger ? " tone-" + actions[0]?.tone : ""}`} style={trigger ? undefined : { width: max }}>
         {actions.map((a) => (
-          <button key={a.label} className={`swipe-action tone-${a.tone}`} onClick={() => { apply(0, true); setOffset(0); a.onClick(); }}>
-            {a.label}
+          <button key={a.label} className={`swipe-action tone-${a.tone}`} tabIndex={trigger ? -1 : 0} onClick={() => { apply(0, true); setOffset(0); a.onClick(); }}>
+            {a.icon && <Icon name={a.icon} size={18} />}<span>{a.label}</span>
           </button>
         ))}
       </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, uid, UNIT_STATUSES, UNIT_STATUS_LABEL, type ClipMeta, type Part, type Skill, type UnitStatus } from "../db";
+import { db, uid, UNIT_STATUSES, UNIT_STATUS_LABEL, type ClipMeta, type Part, type Skill, type Unit, type UnitStatus } from "../db";
 import { dayLabel, elapsedLabel, minutesLabel, bigTime } from "../logic";
 import {
   addClip, addPartNote, clipTitle, ensureThumbs, initials, removeUnitCover, setUnitCover, coverCrop, addUnitNote, migrateUnitNote, removeUnitNote, sortUnits, clipStorage, createPart, createUnit, deletePart, deleteUnit, movePart, missingClipIds, removeClip, removePartNote,
@@ -103,18 +103,20 @@ function CropSheet({ file, onClose, onDone }: { file: File | null; onClose: () =
   );
 }
 
-/** Auswahl, Zuschnitt und Entfernen des Titelbilds. */
-function useCoverPicker(unitId: string, hasCover: boolean) {
+/** Auswahl, Zuschnitt und Entfernen des Titelbilds (für ein beliebiges Stück, das beim Öffnen übergeben wird). */
+function useCoverPicker() {
   const { actionSheet, undoable } = useUI();
   const [file, setFile] = useState<File | null>(null);
+  const idRef = useRef("");
   const input = useRef<HTMLInputElement>(null);
   const node = (
     <>
       <input ref={input} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = ""; }} />
-      <CropSheet file={file} onClose={() => setFile(null)} onDone={(b) => void setUnitCover(unitId, b)} />
+      <CropSheet file={file} onClose={() => setFile(null)} onDone={(b) => void setUnitCover(idRef.current, b)} />
     </>
   );
-  const open = () =>
+  const open = (unitId: string, hasCover: boolean) => {
+    idRef.current = unitId;
     actionSheet({
       title: "Titelbild",
       choices: [
@@ -122,7 +124,37 @@ function useCoverPicker(unitId: string, hasCover: boolean) {
         ...(hasCover ? [{ label: "Bild entfernen", destructive: true, onSelect: () => undoable("Titelbild entfernt", () => removeUnitCover(unitId)) }] : []),
       ],
     });
+  };
   return { open, node };
+}
+
+/** Langes Drücken (≈ 0,5 s) öffnet ein Menü, kurzes Tippen bleibt ein normaler Klick. */
+function useLongPress(onLong: () => void) {
+  const timer = useRef(0);
+  const fired = useRef(false);
+  const cancel = () => window.clearTimeout(timer.current);
+  return {
+    onPointerDown: () => { fired.current = false; cancel(); timer.current = window.setTimeout(() => { fired.current = true; navigator.vibrate?.(8); onLong(); }, 520); },
+    onPointerUp: cancel, onPointerLeave: cancel, onPointerCancel: cancel,
+    onPointerMove: (e: React.PointerEvent) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 3) cancel(); },
+    onContextMenu: (e: React.SyntheticEvent) => e.preventDefault(),
+    onClickCapture: (e: React.SyntheticEvent) => { if (fired.current) { fired.current = false; e.stopPropagation(); e.preventDefault(); } },
+  };
+}
+
+function UnitTile({ unit, kategorie, pr, onOpen, onMenu }: { unit: Unit; kategorie: string; pr: { solid: number; total: number }; onOpen: () => void; onMenu: () => void }) {
+  const lp = useLongPress(onMenu);
+  return (
+    <button className="unit-tile" onClick={onOpen} {...lp}>
+      <UnitCover unit={unit} kategorie={kategorie} />
+      <span className="unit-tile-title">{unit.title}</span>
+      <span className="unit-tile-meta">
+        <span className={`unit-status is-${unit.status}`}><i className="unit-dot" />{UNIT_STATUS_LABEL[unit.status]}</span>
+        {pr.total > 0 && <span className="unit-tile-prog">{pr.solid}/{pr.total}</span>}
+      </span>
+      {pr.total > 0 && <span className="unit-bar" aria-hidden="true"><i style={{ width: `${(pr.solid / pr.total) * 100}%` }} /></span>}
+    </button>
+  );
 }
 
 export function UnitsSection({ skill }: { skill: Skill }) {
@@ -134,6 +166,18 @@ export function UnitsSection({ skill }: { skill: Skill }) {
   }, [skill.id]);
   const sessions = useLiveQuery(() => db.sessions.where("skillId").equals(skill.id).toArray(), [skill.id]);
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState<Unit | null>(null);
+  const { actionSheet, undoable } = useUI();
+  const cover = useCoverPicker();
+  const unitMenu = (u: Unit) =>
+    actionSheet({
+      title: u.title,
+      choices: [
+        { label: "Titelbild ändern", onSelect: () => cover.open(u.id, !!u.hasCover) },
+        { label: "Umbenennen", onSelect: () => setRenaming(u) },
+        { label: "Löschen", destructive: true, onSelect: () => undoable(`„${u.title}“ gelöscht`, () => deleteUnit(u.id)) },
+      ],
+    });
   const minutes = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of sessions ?? []) if (s.unitId) m.set(s.unitId, (m.get(s.unitId) ?? 0) + s.minutes);
@@ -148,25 +192,23 @@ export function UnitsSection({ skill }: { skill: Skill }) {
         <h2 className="block-title">Unterpunkte</h2>
       </div>
       <div className="unit-grid">
-        {sortUnits(units ?? []).map((u, i) => {
-          const mine = (parts ?? []).filter((p) => p.unitId === u.id);
-          const pr = unitProgress(mine);
-          const featured = i === 0 && u.status === "lerne";
-          return (
-            <button key={u.id} className={`unit-tile${featured ? " is-featured" : ""}`} onClick={() => nav.push({ type: "unit", id: u.id })}>
-              <UnitCover unit={u} kategorie={skill.kategorie} />
-              <span className="unit-tile-title">{u.title}</span>
-              <span className="unit-tile-meta">
-                <span className={`unit-status is-${u.status}`}><i className="unit-dot" />{UNIT_STATUS_LABEL[u.status]}</span>
-                {pr.total > 0 && <span className="unit-tile-prog">{pr.solid}/{pr.total}</span>}
-              </span>
-              {pr.total > 0 && <span className="unit-bar" aria-hidden="true"><i style={{ width: `${(pr.solid / pr.total) * 100}%` }} /></span>}
-            </button>
+        {(() => {
+          const sorted = sortUnits(units ?? []);
+          const tiles = sorted.map((u) => (
+            <UnitTile key={u.id} unit={u} kategorie={skill.kategorie} pr={unitProgress((parts ?? []).filter((p) => p.unitId === u.id))}
+              onOpen={() => nav.push({ type: "unit", id: u.id })} onMenu={() => unitMenu(u)} />
+          ));
+          const add = (
+            <button key="add" className="unit-add" onClick={() => setAdding(true)}><Icon name="plus" size={18} /><span>Neues Stück</span></button>
           );
-        })}
+          // „Neues Stück“ steht direkt neben dem ersten Stück
+          return [...tiles.slice(0, 1), add, ...tiles.slice(1)];
+        })()}
       </div>
-      <button className="unit-add" onClick={() => setAdding(true)}><Icon name="plus" size={16} />Neues Stück</button>
       {assigned < total && units && units.length > 0 && <p className="units-foot">Gesamt {minutesLabel(total)}, davon {minutesLabel(total - assigned)} ohne Stück.</p>}
+      {cover.node}
+      <NameSheet open={!!renaming} onClose={() => setRenaming(null)} title="Stück umbenennen" label="Sichern" placeholder="Titel" initial={renaming?.title ?? ""}
+        onSave={(t) => { if (renaming && t) void updateUnit(renaming.id, { title: t }); }} />
       <NameSheet open={adding} onClose={() => setAdding(false)} title="Neues Stück" label="Anlegen" placeholder="Titel, z. B. Name des Stücks"
         onSave={(name) => void createUnit(skill.id, name).then((u) => nav.push({ type: "unit", id: u.id }))} />
     </section>
@@ -191,7 +233,7 @@ export function UnitPage({ id }: { id: string }) {
   const [title, setTitle] = useState("");
   const [draft, setDraft] = useState("");
   const loaded = useRef<string | null>(null);
-  const cover = useCoverPicker(id, !!unit?.hasCover);
+  const cover = useCoverPicker();
   const saveUnitMetro = useCallback((patch: { bpm?: number; meter?: string }) => void setUnitMetronome(id, patch), [id]);
 
   useEffect(() => {
@@ -224,7 +266,7 @@ export function UnitPage({ id }: { id: string }) {
 
   return (
     <NavPage title={unit.title} back={back} eyebrow={<CatBadge name={skill.kategorie} />}
-      cover={<button className="ucover-btn" onClick={cover.open} aria-label="Titelbild ändern"><UnitCover unit={unit} kategorie={skill.kategorie} size="head" /></button>}
+      cover={<button className="ucover-btn" onClick={() => cover.open(id, !!unit.hasCover)} aria-label="Titelbild ändern"><UnitCover unit={unit} kategorie={skill.kategorie} size="head" /></button>}
       trailing={(parts?.length ?? 0) > 1 ? <NavButton label={sorting ? "Fertig" : "Sortieren"} onClick={() => setSorting((v) => !v)} bold={sorting} /> : undefined}
       sub={
         <div className="head-meta">
@@ -316,7 +358,7 @@ export function UnitPage({ id }: { id: string }) {
             </div>
           </Group>
           <Group>
-            <Row title="Titelbild" detail={unit.hasCover ? "Ändern" : "Wählen"} chevron onClick={cover.open} />
+            <Row title="Titelbild" detail={unit.hasCover ? "Ändern" : "Wählen"} chevron onClick={() => cover.open(id, !!unit.hasCover)} />
           </Group>
           <Group header="Status">
             <div className="row segmented-row">

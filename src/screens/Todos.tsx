@@ -50,7 +50,7 @@ const BUCKETS: { key: TodoBucket; title: string }[] = [
 ];
 
 export function Todos() {
-  const { undoable, actionSheet } = useUI();
+  const { undoable } = useUI();
   const lists = useLiveQuery(() => db.lists.orderBy("order").toArray(), []);
   const todos = useLiveQuery(() => db.todos.toArray(), []);
   const [listId, setListIdState] = useState<string>(() => loadSetting(LIST_KEY, ALL_LISTS));
@@ -61,6 +61,8 @@ export function Todos() {
   const [showDoneIn, setShowDoneIn] = useState<Set<string>>(new Set());
   const [only, setOnly] = useState(false);
   const { completing, complete } = useCompleting();
+  const [swiped, setSwiped] = useState<boolean>(() => loadSetting("todos.swiped", false));
+  const markSwiped = () => { if (!swiped) { setSwiped(true); saveSetting("todos.swiped", true); } };
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searching = searchOpen && query.trim().length > 0;
@@ -96,17 +98,11 @@ export function Todos() {
       return async () => void (await db.todos.put(t));
     });
 
-  const reschedule = (t: Todo) => {
-    const mon = addDays(new Date(), ((8 - new Date().getDay()) % 7) || 7);
-    actionSheet({
-      title: t.text,
-      message: "Verschieben auf …",
-      choices: [
-        { label: "Heute", onSelect: () => void db.todos.update(t.id, { due: today }) },
-        { label: "Morgen", onSelect: () => void db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) }) },
-        { label: "Nächste Woche (Montag)", onSelect: () => void db.todos.update(t.id, { due: dayKey(mon) }) },
-        { label: "Ohne Datum", onSelect: () => void db.todos.update(t.id, { due: null }) },
-      ],
+  const tomorrow = (t: Todo) => {
+    const prev = t.due;
+    undoable("Auf morgen verschoben", async () => {
+      await db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) });
+      return async () => void (await db.todos.update(t.id, { due: prev }));
     });
   };
 
@@ -123,9 +119,9 @@ export function Todos() {
     const overdue = !t.done && !!t.due && t.due < today;
     const isToday = !t.done && t.due === today;
     return (
-      <SwipeRow key={t.id}
-        leading={t.done ? { label: "Offen", tone: "gray", onClick: () => void setTodoDone(t.id, false) } : { label: "Erledigt", tone: "ok", onClick: () => complete(t.id) }}
-        actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }, ...(t.done ? [] : [{ label: "Verschieben", tone: "gray" as const, onClick: () => reschedule(t) }])]}>
+      <SwipeRow key={t.id} trigger={0.3} style={listStyle(t.listId, lists)} onSwipe={markSwiped}
+        leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: () => tomorrow(t) }}
+        actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: () => remove(t) }]}>
         <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{hl(shown)}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
           subtitle={origin ? <span className="todo-origin cv" style={listStyle(t.listId, lists)}><i className="chip-dot" />{hl(origin)}</span> : undefined}
           detail={t.due && !t.done && !opts.hideDue ? <span className={`todo-due${overdue ? " is-overdue" : isToday ? " is-today" : ""}`}>{dueLabel(t.due)}</span> : undefined}
@@ -264,6 +260,7 @@ export function Todos() {
           </div>
         )}
       </Group>}
+      {!searching && !swiped && (todos?.length ?? 0) > 0 && <p className="swipe-hint">Rechts wischen: morgen · Links wischen: löschen</p>}
 
       {todos && lists && (searching ? searchView() : listId === ALL_LISTS ? allView() : lists.filter((l) => l.id === listId).map(listCard))}
       {todos && lists && lists.length === 0 && <EmptyState icon="todo" title="Keine Listen" text="Lege über das Plus oben eine Liste an." />}

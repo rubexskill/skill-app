@@ -18,7 +18,7 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 const LONG = "Eine ziemlich lange Überschrift ohne Leerzeichen-Pause-Superkalifragilistischexpialigetisch und noch viel mehr Text dahinter";
 const URL_LONG = "https://example.org/ein/sehr/langer/pfad/zu/einer/quelle/mit/vielen/teilen/und/parametern?a=1&b=2&c=3&d=4&e=5&f=6&g=7";
 
-const sizes = [375, 390, 430];
+const sizes = process.env.TOUCH_ONLY ? [] : process.env.SIZES ? process.env.SIZES.split(",").map(Number) : [375, 390, 430];
 const failures = [];
 
 async function seed(page) {
@@ -103,6 +103,119 @@ const click = async (page, text) => {
   await page.waitForTimeout(650);
 };
 
+
+/** Treffer-Genauigkeit mit echtem Touch (iPhone 390×844): gehört der Mittelpunkt jeder Tipp-Fläche wirklich dazu, verschiebt sich beim Tippen nichts, fängt nach Player/Sheet/Toast nichts ab? */
+const TAP_SEL = ".row, .fold-head, .clip-row, .unit-tile, .unit-add, .part-main, .tile, .acard, .todo-row, .nav-btn, .pill, .tab";
+async function hitAudit(page, name) {
+  const res = await page.evaluate((sel) => {
+    const vis = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && cs.pointerEvents !== "none"; };
+    const scs = [...document.querySelectorAll(".scroller")].filter((el) => el.offsetParent && !el.closest(".is-hidden, .is-covered"));
+    const top = scs[scs.length - 1] ?? document.body;
+    const bad = []; let n = 0;
+    const els = [...top.querySelectorAll(sel)].filter(vis);
+    const bar = [...document.querySelectorAll(".tab")];
+    for (const el of [...els, ...(top.closest(".tab-pane, .page") ? [] : []), ...bar.filter(vis)]) {
+      if (!el.closest(".tabbar")) el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      const cx = Math.min(innerWidth - 2, Math.max(2, r.left + r.width / 2)), cy = Math.min(innerHeight - 2, Math.max(2, r.top + r.height / 2));
+      if (r.bottom < 0 || r.top > innerHeight) continue;
+      n++;
+      const hit = document.elementFromPoint(cx, cy);
+      const ok = hit && (el.contains(hit) || hit.closest(sel) === el);
+      const cls = String(el.className).slice(0, 30);
+      if (!ok) bad.push(`Treffer ${cls} (${Math.round(cx)},${Math.round(cy)}) → ${hit?.tagName}.${String(hit?.className).slice(0, 30)}`);
+      if (/fold-head|clip-row|unit-add|\brow\b/.test(cls) && !el.closest(".swipe-actions, .tabbar") && r.height < 44) bad.push(`zu niedrig ${cls} ${Math.round(r.height)}px`);
+    }
+    top.scrollTop = 0;
+    return { n, bad: [...new Set(bad)].slice(0, 8) };
+  }, TAP_SEL);
+  if (res.bad.length) failures.push(`Touch · ${name}: ${res.bad.join(" | ")}`);
+  if (res.n === 0) failures.push(`Touch · ${name}: keine Tipp-Flächen gefunden`);
+}
+
+/** Verschiebt sich zwischen pointerdown und click etwas? Und fängt nach dem Schließen eines Overlays nichts ab? */
+async function shiftAudit(page, name, locator) {
+  await page.evaluate((sel) => {
+    const snap = () => [...document.querySelectorAll(sel)].filter((e) => e.getBoundingClientRect().height > 0).map((e) => [e, e.getBoundingClientRect().top]);
+    window.__shift = { down: [], moved: [] };
+    window.addEventListener("pointerdown", () => { window.__shift.down = snap(); }, { capture: true, once: true });
+    window.addEventListener("click", () => { window.__shift.moved = window.__shift.down.filter(([e, t]) => e.isConnected && Math.abs(e.getBoundingClientRect().top - t) > 1).map(([e]) => String(e.className).slice(0, 30)); }, { capture: true, once: true });
+  }, TAP_SEL);
+  await locator.evaluate((el) => el.scrollIntoView({ block: "center" })); await page.waitForTimeout(120);
+  const b = await locator.boundingBox();
+  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+  await page.waitForTimeout(120);
+  const moved = await page.evaluate(() => window.__shift?.moved ?? ["kein Klick"]);
+  if (moved.length) failures.push(`Touch · ${name}: Fläche verschob sich zwischen pointerdown und click: ${moved.join(",")}`);
+}
+
+async function noGhosts(page, name) {
+  const g = await page.evaluate(() => {
+    const out = [];
+    for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.2, 0.5, 0.8]) {
+      const el = document.elementFromPoint(innerWidth * fx, innerHeight * fy);
+      const bad = el?.closest(".sheet-layer, .fsp, .toast, .celebrate, .action-layer");
+      if (bad) out.push(String(bad.className).slice(0, 30));
+    }
+    return { out, fsp: document.querySelectorAll(".fsp").length, cls: document.documentElement.classList.contains("has-player") };
+  });
+  if (g.out.length || g.fsp || g.cls) failures.push(`Touch · ${name}: unsichtbare Fläche fängt Eingaben ab: ${JSON.stringify(g)}`);
+}
+
+async function touchRun(browser) {
+  try { await touchRunInner(browser); } catch (e) { failures.push("Touch-Lauf abgebrochen: " + String(e.message).split("\n")[0]); }
+}
+
+async function touchRunInner(browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, serviceWorkers: "block", colorScheme: process.env.DARK ? "dark" : "light" });
+  await context.route("https://skills.test/**", (route) => {
+    let p = new URL(route.request().url()).pathname;
+    if (p === "/") p = "/index.html";
+    const f = path.join(dist, p);
+    if (!fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
+    route.fulfill({ status: 200, contentType: types[path.extname(f)] ?? "application/octet-stream", body: fs.readFileSync(f) });
+  });
+  const page = await context.newPage();
+  await page.goto("https://skills.test/");
+  await page.waitForFunction(() => window.db);
+  await seed(page);
+  await page.waitForTimeout(600);
+  const tap = async (loc) => { try { await loc.evaluate((el) => { if (!el.closest(".tabbar")) el.scrollIntoView({ block: "center" }); }, null, { timeout: 5000 }); await page.waitForTimeout(120); } catch (e) { await page.screenshot({ path: "/tmp/touchfail2.png" }); throw new Error(`${loc} nicht sichtbar`); } const b = await loc.boundingBox(); await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); await page.waitForTimeout(750); };
+  const tabTap = async (n) => { await tap(page.locator(".tabbar").getByText(n, { exact: true })); if (process.env.TOUCH_ONLY) console.log("tab", n, await page.evaluate(() => [...document.querySelectorAll(".tab")].map((t) => t.className + ":" + t.textContent).join(" | "))); };
+  for (const t of ["Heute", "To-dos", "Mehr"]) { await tabTap(t); await hitAudit(page, t); await noGhosts(page, t); }
+  await tabTap("Übersicht");
+  await tap(page.getByText("Klavierstück", { exact: true }).first());
+  await hitAudit(page, "Skill");
+  await shiftAudit(page, "Skill (Akkordeon)", page.locator(".fold-head").first()); await page.waitForTimeout(400);
+  await page.evaluate(() => { const sc = [...document.querySelectorAll(".scroller")].filter((e) => e.offsetParent).pop(); if (sc) sc.scrollTop = 0; });
+  await tap(page.locator(".page[aria-hidden='false'] .unit-tile").first());
+  await hitAudit(page, "Stück");
+  const heads = page.locator(".page[aria-hidden='false'] .fold-head");
+  const nh = await heads.count();
+  for (let i = 0; i < Math.min(nh, 3); i++) await shiftAudit(page, `Stück Akkordeon ${i}`, heads.nth(i)), await page.waitForTimeout(450);
+  await tap(page.locator(".part-main").first());
+  await hitAudit(page, "Abschnitt");
+  for (let i = 0; i < 4; i++) await shiftAudit(page, `Abschnitt Akkordeon ${i}`, page.locator(".page[aria-hidden='false'] .fold-head").nth(i)), await page.waitForTimeout(450);
+  // Player öffnen und schließen, dann Sheet und Toast: danach muss alles wieder genau treffen
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await tap(page.locator(".page[aria-hidden='false'] .clip-row").first());
+  const open1 = await page.locator(".fsp").count();
+  if (!open1) failures.push("Touch · Player ließ sich nicht per Tippen öffnen");
+  const xb = await page.locator(".fsp-x").boundingBox();
+  await page.touchscreen.tap(xb.x + xb.width / 2, xb.y + xb.height / 2); await page.waitForTimeout(700);
+  await noGhosts(page, "nach Player"); await hitAudit(page, "Abschnitt nach Player");
+  if (!(await page.locator(".page[aria-hidden='false'] .clip-row").count())) failures.push("Touch · Geister-Klick nach Player hat die Seite dahinter getroffen");
+  await tap(page.locator(".page[aria-hidden='false'] .clip-more").first());
+  await page.getByText("Abbrechen").last().tap().catch(() => {}); await page.waitForTimeout(700);
+  await noGhosts(page, "nach Sheet"); await hitAudit(page, "Abschnitt nach Sheet");
+  await tap(page.locator(".page[aria-hidden='false'] .clip-more").first());
+  await page.getByText("Löschen").last().tap().catch(() => {}); await page.waitForTimeout(500);
+  await page.locator(".toast-action").tap().catch(() => {}); await page.waitForTimeout(2200);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 5200)));
+  await noGhosts(page, "nach Toast"); await hitAudit(page, "Abschnitt nach Toast");
+  await context.close();
+}
+
 async function run() {
   globalThis.__debug = process.env.DEBUG;
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
@@ -161,6 +274,65 @@ async function run() {
       // zurückschieben
       await page.mouse.move(10, 10);
     }
+    // Wischen: rechts = morgen (ab ~30 %), links = löschen, kurz = zurückfedern; Erledigen nur per Haken
+    {
+      const swipe = async (row, dx, hold = false) => {
+        await row.evaluate((el) => el.scrollIntoView({ block: "center" })); await page.waitForTimeout(150);
+        const b = await row.boundingBox(); const y = b.y + b.height / 2; const x0 = b.x + b.width / 2;
+        await page.mouse.move(x0, y); await page.mouse.down();
+        await page.mouse.move(x0 + dx / 2, y + 1, { steps: 5 }); await page.mouse.move(x0 + dx, y + 1, { steps: 5 });
+        if (hold) return b;
+        await page.mouse.up(); await page.waitForTimeout(800);
+        return b;
+      };
+      const rowOf = (txt) => page.locator(".todo-row", { hasText: txt }).first();
+      const pick = await page.evaluate(async () => { const lists = await window.db.lists.toArray(); const t = await window.app.logic.addTodo("Wischtest Quelle", lists[0].id, "2020-01-01"); return { id: t?.id ?? (await window.db.todos.filter((x) => x.text === "Wischtest Quelle").first()).id, text: "Wischtest Quelle" }; });
+      await page.waitForTimeout(500);
+      if (!pick) failures.push(`${width}px · Wischtest: kein To-do ohne Datum`);
+      else {
+        const key = pick.text;
+        const tom = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; });
+        // zu kurz: federt zurück
+        await swipe(rowOf(key), 70);
+        let t = await page.evaluate((id) => window.db.todos.get(id), pick.id);
+        if (t.due !== "2020-01-01" || t.done) failures.push(`${width}px · Kurzes Wischen löste aus: ${JSON.stringify(t)}`);
+        // während des Wischens: Aktionsfläche bündig, Seite fest
+        const bb = await swipe(rowOf(key), 150, true);
+        if (process.env.DBGSWIPE) { await page.screenshot({ path: "/tmp/swipehold.png" }); console.log("HOLD", JSON.stringify(bb), await page.evaluate(() => [...document.querySelectorAll(".swipe.is-quick")].filter((w) => /Wischtest/.test(w.textContent)).map((w) => w.querySelector(".swipe-content").style.transform + "|" + w.querySelector(".swipe-content").offsetWidth).join(";")));}
+        const live = await page.evaluate(() => { const lead = [...document.querySelectorAll(".todo-card .swipe.is-quick")].find((w) => /Wischtest Quelle/.test(w.textContent))?.querySelector(".swipe-lead"); const card = document.querySelector(".todo-card .group-body").getBoundingClientRect(); const r = lead?.getBoundingClientRect(); const sc = [...document.querySelectorAll(".scroller")].find((x) => x.offsetParent !== null && x.querySelector(".todo-row")); return { cardR: [card.left, card.right], leadR: r && [r.left, r.right], text: lead?.textContent?.trim(), inside: r ? r.left >= card.left - 1 && r.right <= card.right + 1 : false, sx: sc.scrollLeft, dx: document.documentElement.scrollLeft, sw: document.documentElement.scrollWidth, erledigt: !!document.body.innerText.match(/Erledigt\b(?!\s*·)/) && [...document.querySelectorAll(".swipe-action")].some((e) => /Erledigt/.test(e.textContent)) }; });
+        if (live.text !== "Morgen" || !live.inside || live.sx || live.dx || live.sw > width || live.erledigt) failures.push(`${width}px · Wischfläche: ${JSON.stringify(live)}`);
+        await page.mouse.up(); await page.waitForTimeout(900);
+        t = await page.evaluate((id) => window.db.todos.get(id), pick.id);
+        if (t.due !== tom || t.done) failures.push(`${width}px · Rechts wischen setzt nicht auf morgen: ${JSON.stringify(t)}`);
+        const toastTxt = await page.locator(".toast").textContent();
+        if (!/Auf morgen verschoben/.test(toastTxt)) failures.push(`${width}px · Hinweis fehlt: ${toastTxt}`);
+        const heads2 = await page.locator(".all-card .todo-sub").allTextContents();
+        if (!heads2.some((h) => /^Morgen/.test(h))) failures.push(`${width}px · Abschnitt „Morgen“ fehlt: ${JSON.stringify(heads2)}`);
+        await page.locator(".toast-action").click(); await page.waitForTimeout(500);
+        t = await page.evaluate((id) => window.db.todos.get(id), pick.id);
+        if (t.due !== "2020-01-01") failures.push(`${width}px · Rückgängig (morgen) stellt nicht her: ${t.due}`);
+        // schon vorhandenes Datum wird ebenfalls auf morgen gesetzt
+        await page.evaluate((id) => window.db.todos.update(id, { due: "2030-01-05" }), pick.id); await page.waitForTimeout(500);
+        await swipe(rowOf(key), 160);
+        t = await page.evaluate((id) => window.db.todos.get(id), pick.id);
+        if (t.due !== tom) failures.push(`${width}px · Vorhandenes Datum nicht auf morgen gesetzt: ${t.due}`);
+        // links = löschen mit Rückgängig
+        await page.evaluate((id) => window.db.todos.update(id, { due: "2020-01-01" }), pick.id); await page.waitForTimeout(500);
+        await swipe(rowOf(key), -160);
+        if (await page.evaluate((id) => window.db.todos.get(id).then((x) => !!x), pick.id)) failures.push(`${width}px · Links wischen löscht nicht`);
+        await page.locator(".toast-action").click(); await page.waitForTimeout(500);
+        t = await page.evaluate((id) => window.db.todos.get(id), pick.id);
+        if (!t || t.done) failures.push(`${width}px · Rückgängig (löschen) stellt nicht her`);
+        // Hinweis verschwindet nach dem ersten Wischen
+        if (await page.locator(".swipe-hint").count()) failures.push(`${width}px · Wisch-Tipp bleibt stehen`);
+        // Erledigen nur per Haken
+        const before = await page.evaluate((id) => window.db.todos.get(id).then((x) => x.done), pick.id);
+        await rowOf(key).locator(".check, [role=checkbox], button").first().click(); await page.waitForTimeout(1100);
+        const after = await page.evaluate((id) => window.db.todos.get(id).then((x) => x.done), pick.id);
+        if (before || !after) failures.push(`${width}px · Haken erledigt nicht (${before} → ${after})`);
+        await page.evaluate((id) => window.db.todos.delete(id), pick.id); await page.waitForTimeout(400);
+      }
+    }
     // To-dos „Alle“: gemeinsame Übersicht, Datum zuerst, Herkunft pro Zeile
     const heads = await page.locator(".all-card .todo-sub").allTextContents();
     if (!heads.length || !/^Überfällig/.test(heads[0]) || !/^Heute/.test(heads[1] ?? "") || /Allgemein/.test(heads.join())) failures.push(`${width}px · Alle-Abschnitte: ${JSON.stringify(heads)}`);
@@ -216,8 +388,18 @@ async function run() {
     if (hasHero || !hasTotal) failures.push(`${width}px · Klavierstück: Timer-Ring statt Gesamtkarte (hero ${hasHero}, total ${hasTotal})`);
     // Raster: erstes „Lerne ich“ groß, „Neues Stück“ klein darunter
     await page.evaluate(([sid]) => window.db.units.put({ id: "u3", skillId: sid, title: "Auffrischen-Stück", status: "auffrischen", note: "", nextNote: null, order: 0, createdAt: Date.now() }), [await page.evaluate(() => window.db.units.get("u1").then((x) => x.skillId))]); await page.waitForTimeout(500);
-    const gridInfo = await page.evaluate(() => { const g = document.querySelector(".page[aria-hidden='false'] .unit-grid"); if (!g) return null; const k = [...g.children]; const add = g.parentElement.querySelector(".unit-add"); const fr = k[0].getBoundingClientRect(); const sr = k[1].getBoundingClientRect(); return { n: k.length, featured: k[0].classList.contains("is-featured"), wide: fr.width > sr.width * 1.7, order: k.map((c) => c.querySelector(".unit-status")?.textContent), addH: add?.getBoundingClientRect().height, addBelow: add ? add.getBoundingClientRect().top >= k[k.length - 1].getBoundingClientRect().bottom : false, gridW: g.getBoundingClientRect().width, addW: add?.getBoundingClientRect().width }; });
-    if (!gridInfo || gridInfo.n < 2 || !gridInfo.featured || !gridInfo.wide || gridInfo.order[0] !== "Lerne ich" || gridInfo.order[gridInfo.order.length - 1] !== "Auffrischen" && gridInfo.order.includes("Auffrischen") && gridInfo.order.indexOf("Auffrischen") < gridInfo.order.lastIndexOf("Lerne ich") || !(gridInfo.addH < 60) || !gridInfo.addBelow) failures.push(`${width}px · Stück-Raster: ${JSON.stringify(gridInfo)}`);
+    await page.evaluate(async () => { const c = document.createElement("canvas"); c.width = 300; c.height = 200; c.getContext("2d").fillStyle = "#468"; c.getContext("2d").fillRect(0, 0, 300, 200); const blob = await new Promise((r) => c.toBlob(r, "image/jpeg")); await window.db.covers.put({ id: "u3", blob }); await window.db.units.update("u3", { hasCover: true }); }); await page.waitForTimeout(500);
+    const gridInfo = await page.evaluate(() => { const g = document.querySelector(".page[aria-hidden='false'] .unit-grid"); if (!g) return null; const k = [...g.children]; const tiles = k.filter((c) => c.classList.contains("unit-tile")); const sq = tiles.map((t) => { const r = t.querySelector(".ucover").getBoundingClientRect(); return Math.abs(r.width - r.height) < 1.5 && r.width >= 140 && r.width <= 200; }); const add = g.querySelector(".unit-add"); const img = g.querySelector(".ucover img"); const cs = img ? getComputedStyle(img) : null; return { n: k.length, firstIsTile: k[0].classList.contains("unit-tile"), addSecond: k[1] === add, order: tiles.map((c) => c.querySelector(".unit-status")?.textContent), squares: sq.every(Boolean), addH: add?.getBoundingClientRect().height, tileH: tiles[0].getBoundingClientRect().height, sameRow: Math.abs(k[0].getBoundingClientRect().top - add.getBoundingClientRect().top) < 2, img: img ? { drag: img.getAttribute("draggable"), callout: cs.getPropertyValue("-webkit-touch-callout"), pe: cs.pointerEvents, sel: cs.userSelect } : "kein Bild" }; });
+    const rank = { "Lerne ich": 0, "Auffrischen": 1, "Kann ich": 2 };
+    const sorted = gridInfo && gridInfo.order.every((o, i, a) => i === 0 || rank[a[i - 1]] <= rank[o]);
+    if (!gridInfo || gridInfo.n < 3 || !gridInfo.firstIsTile || !gridInfo.addSecond || !sorted || gridInfo.order[0] !== "Lerne ich" || !gridInfo.squares || !gridInfo.sameRow || !(gridInfo.addH <= gridInfo.tileH) || gridInfo.img === "kein Bild" || gridInfo.img.drag !== "false" || gridInfo.img.pe !== "none" || gridInfo.img.sel !== "none") failures.push(`${width}px · Stück-Raster: ${JSON.stringify(gridInfo)}`);
+    // langes Drücken öffnet das eigene Menü (kein iOS-Menü)
+    const tb = await page.locator(".page[aria-hidden='false'] .unit-tile").first().boundingBox();
+    await page.mouse.move(tb.x + tb.width / 2, tb.y + 30); await page.mouse.down(); await page.waitForTimeout(750); await page.mouse.up(); await page.waitForTimeout(400);
+    const lpMenu = await page.getByText("Titelbild ändern").count();
+    if (!lpMenu || await page.locator(".page[aria-hidden='false'] .unit-grid").count() === 0) failures.push(`${width}px · Langes Drücken: Menü fehlt (${lpMenu})`);
+    await check("Stück-Menü");
+    await page.getByText("Abbrechen").last().click().catch(() => {}); await page.waitForTimeout(500);
     await page.evaluate(([sid]) => window.db.units.put({ id: "u2", skillId: sid, title: "Sehr langer Stückname " + "x".repeat(60), status: "lerne", note: "", nextNote: null, order: 1, createdAt: Date.now(), hasCover: true }), [await page.evaluate(() => window.db.units.get('u1').then((x) => x.skillId))]); await page.waitForTimeout(500);
     await check("Stück-Raster (Platzhalter, Bild fehlt)");
     await page.locator(".unit-tile").first().click(); await page.waitForTimeout(800);
@@ -226,11 +408,11 @@ async function run() {
     const png = await page.evaluate(() => { const c = document.createElement("canvas"); c.width = 600; c.height = 400; const x = c.getContext("2d"); x.fillStyle = "#c46"; x.fillRect(0, 0, 600, 400); x.fillStyle = "#fff"; x.fillRect(200, 100, 200, 200); return c.toDataURL("image/png").split(",")[1]; });
     await page.locator('.page[aria-hidden="false"] .ucover-btn').click(); await page.waitForTimeout(400);
     await page.getByText("Aus der Mediathek wählen").click({ timeout: 3000 }).catch(() => {});
-    await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") }); await page.waitForTimeout(700);
+    await page.locator('input[type=file][accept="image/*"]').last().setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") }); await page.waitForTimeout(700);
     await check("Titelbild zuschneiden");
     await page.getByRole("button", { name: "Sichern" }).last().click(); await page.waitForTimeout(700);
     const coverState = await page.evaluate(async () => ({ n: await window.db.covers.count(), has: (await window.db.units.get("u1")).hasCover }));
-    if (coverState.n !== 1 || !coverState.has) failures.push(`${width}px · Titelbild nicht gespeichert: ${JSON.stringify(coverState)}`);
+    if (coverState.n !== 2 || !coverState.has) failures.push(`${width}px · Titelbild nicht gespeichert: ${JSON.stringify(coverState)}`);
     await check("Unterpunkt mit Titelbild");
     // eingeklappt → jede Zeile einzeln aufklappen und prüfen
     for (const name of ["Metronom", "Aufnahmen"]) {
@@ -392,6 +574,7 @@ async function run() {
     await page.mouse.up();
     await context.close();
   }
+  await touchRun(browser);
   await browser.close();
   if (failures.length) {
     console.error("Seitliches Verschieben möglich:\n" + failures.join("\n"));

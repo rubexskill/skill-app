@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Skill, type Todo } from "../db";
-import { dayKey, dueLabel, isActiveHabit, isActiveSkill, longDate, minutesLabel, setTodoDone, startOfDay, toggleCheck } from "../logic";
+import { addDays, dayKey, dueLabel, isActiveHabit, isActiveSkill, longDate, minutesLabel, setTodoDone, startOfDay, toggleCheck } from "../logic";
 import { CheckCircle, EmptyState, Group, NavPage, Row, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { CategoryIcon, catVars } from "../categories";
@@ -48,6 +48,13 @@ export function Today() {
 
   const isDone = (s: Skill) => checked.has(`${s.id}|${today}`) || (s.typ === "skill" && (minutesToday.get(s.id) ?? 0) > 0);
 
+  const toTomorrow = (t: Todo) => {
+    const prev = t.due;
+    undoable("Auf morgen verschoben", async () => {
+      await db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) });
+      return async () => void (await db.todos.update(t.id, { due: prev }));
+    });
+  };
   const removeTodo = (t: Todo) =>
     undoable("To-do gelöscht", async () => {
       await db.todos.delete(t.id);
@@ -115,12 +122,14 @@ export function Today() {
           </Group>
 
           {dueTodos.length > 0 && (
-            <Group className="is-card" header="To-dos" footer="Nach links wischen zum Löschen.">
+            <Group className="is-card" header="To-dos" footer="Rechts wischen: morgen · Links: löschen.">
               {dueTodos.map((t) => {
                 const isOn = t.done || completing.has(t.id);
                 const overdue = !t.done && t.due! < today;
                 return (
-                  <SwipeRow key={t.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeTodo(t) }]}>
+                  <SwipeRow key={t.id} trigger={0.3}
+                    leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: () => toTomorrow(t) }}
+                    actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: () => removeTodo(t) }]}>
                     <Row className={completing.has(t.id) ? "is-completing" : ""} title={t.text} muted={isOn}
                       subtitle={<>{overdue ? <span className="overdue">{dueLabel(t.due!)}</span> : null}{listName(t.listId) ? <span className={overdue ? "sep" : ""}>{listName(t.listId)}</span> : null}</>}
                       leading={<CheckCircle checked={isOn} label={t.text} onToggle={() => (t.done ? void setTodoDone(t.id, false) : complete(t.id))} />} />
