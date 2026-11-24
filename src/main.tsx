@@ -23,9 +23,9 @@ createRoot(document.getElementById("root")!).render(
 
 // Nur im Entwicklungsmodus oder in Test-Builds (VITE_EXPOSE=1): Datenbank und Logik für automatisierte Tests erreichbar machen.
 if (import.meta.env.DEV || import.meta.env.VITE_EXPOSE === "1") {
-  void Promise.all([import("./db"), import("./logic"), import("./sync")]).then(([{ db }, logic, sync]) => {
+  void Promise.all([import("./db"), import("./logic"), import("./sync"), import("./units")]).then(([{ db }, logic, sync, units]) => {
     const w = window as unknown as Record<string, unknown>;
     w.db = db;
-    w.app = { logic, sync };
+    w.app = { logic, sync, units };
   });
 }

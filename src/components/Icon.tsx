@@ -339,6 +339,12 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M6 11.5a6 6 0 0 0 12 0M12 17.5v3M9 20.5h6" />
     </g>
   ),
+  trim: (
+    <g {...S}>
+      <path d="M9.5 5.5H6v13h3.5M14.5 5.5H18v13h-3.5" />
+      <path d="M11 12h2" />
+    </g>
+  ),
   undo: (
     <g {...S}>
       <path d="M9 6.5L4.5 11 9 15.5" />

@@ -177,7 +177,8 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
   const blobs = (await db.clipBlobs.bulkGet(parts.flatMap((p) => p.clips.map((c) => c.id)))).filter((b): b is NonNullable<typeof b> => !!b);
   const recs = (await Promise.all(units.map((u) => db.recordings.where("unitId").equals(u.id).toArray()))).flat();
   const recBlobs = (await db.recBlobs.bulkGet(recs.map((r) => r.id))).filter((b): b is NonNullable<typeof b> => !!b);
-  const tables = [db.skills, db.sessions, db.checks, db.records, db.cards, db.units, db.parts, db.clipBlobs, db.recordings, db.recBlobs];
+  const covers = (await db.covers.bulkGet(units.map((u) => u.id))).filter((b): b is NonNullable<typeof b> => !!b);
+  const tables = [db.skills, db.sessions, db.checks, db.records, db.cards, db.units, db.parts, db.clipBlobs, db.recordings, db.recBlobs, db.covers];
   await db.transaction("rw", tables, async () => {
     await db.sessions.where("skillId").equals(id).delete();
     await db.checks.where("skillId").equals(id).delete();
@@ -186,6 +187,7 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
     await db.parts.bulkDelete(parts.map((p) => p.id));
     await db.clipBlobs.bulkDelete(blobs.map((b) => b.id));
     await db.recBlobs.bulkDelete(recBlobs.map((b) => b.id));
+    await db.covers.bulkDelete(covers.map((b) => b.id));
     await db.recordings.bulkDelete(recs.map((r) => r.id));
     await db.units.bulkDelete(units.map((u) => u.id));
     await db.skills.delete(id);
@@ -202,6 +204,7 @@ export async function deleteSkill(id: string): Promise<() => Promise<void>> {
       await db.clipBlobs.bulkPut(blobs);
       await db.recordings.bulkPut(recs);
       await db.recBlobs.bulkPut(recBlobs);
+      await db.covers.bulkPut(covers);
     });
   };
 }

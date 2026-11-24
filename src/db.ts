@@ -261,6 +261,8 @@ export interface Unit extends Synced {
   /** Metronom-Standard für alle Abschnitte dieses Stücks */
   bpm?: number;
   meter?: string;
+  /** Titelbild vorhanden (das Bild selbst liegt nur lokal in `covers`) */
+  hasCover?: boolean;
   order: number;
   createdAt: number;
 }
@@ -278,6 +280,10 @@ export interface ClipMeta {
   size: number;
   addedAt: number;
   duration?: number;
+  /** Frei benennbarer Titel (Standard „Clip 1“); `name` bleibt der Dateiname */
+  title?: string;
+  /** Kleines Standbild (JPEG als Data-URL), lokal erzeugt */
+  thumb?: string;
   /** Schleife von … bis … Sekunden */
   start?: number;
   end?: number;
@@ -360,6 +366,7 @@ export class SkillDB extends Dexie {
   parts!: EntityTable<Part, "id">;
   recordings!: EntityTable<Recording, "id">;
   recBlobs!: EntityTable<ClipBlob, "id">;
+  covers!: EntityTable<ClipBlob, "id">;
   clipBlobs!: EntityTable<ClipBlob, "id">;
   tombs!: EntityTable<Tomb, "id">;
 
@@ -439,6 +446,9 @@ export class SkillDB extends Dexie {
       recordings: "id, unitId, partId, at",
       recBlobs: "id",
     });
+
+    // Version 8: Titelbilder der Stücke (nur lokal).
+    this.version(8).stores({ covers: "id" });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
     for (const name of SYNC_TABLES) {

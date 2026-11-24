@@ -29,7 +29,9 @@ export async function deleteUnit(id: string): Promise<() => Promise<void>> {
   const blobs = (await db.clipBlobs.bulkGet(parts.flatMap((p) => p.clips.map((c) => c.id)))).filter((b): b is NonNullable<typeof b> => !!b);
   const recs = await db.recordings.where("unitId").equals(id).toArray();
   const recBlobs = (await db.recBlobs.bulkGet(recs.map((r) => r.id))).filter((b): b is NonNullable<typeof b> => !!b);
-  await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs], async () => {
+  const cover = await db.covers.get(id);
+  await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs, db.covers], async () => {
+    await db.covers.delete(id);
     await db.recBlobs.bulkDelete(recBlobs.map((b) => b.id));
     await db.recordings.bulkDelete(recs.map((r) => r.id));
     await db.parts.bulkDelete(parts.map((p) => p.id));
@@ -39,8 +41,9 @@ export async function deleteUnit(id: string): Promise<() => Promise<void>> {
     await db.units.delete(id);
   });
   return async () => {
-    await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs], async () => {
+    await db.transaction("rw", [db.units, db.parts, db.clipBlobs, db.sessions, db.records, db.recordings, db.recBlobs, db.covers], async () => {
       if (unit) await db.units.put(unit);
+      if (cover) await db.covers.put(cover);
       await db.recordings.bulkPut(recs);
       await db.recBlobs.bulkPut(recBlobs);
       await db.parts.bulkPut(parts);
@@ -181,16 +184,37 @@ export function storageWarning(s: ClipStorage, extra = 0): string | null {
   return null;
 }
 
+export const clipTitle = (c: Pick<ClipMeta, "title">, index: number): string => c.title?.trim() || `Clip ${index + 1}`;
+
 export async function addClip(partId: string, file: File): Promise<ClipMeta> {
   const part = await db.parts.get(partId);
   if (!part) throw new Error("Abschnitt nicht gefunden");
-  const duration = await videoDuration(file);
-  const meta: ClipMeta = { id: uid(), name: file.name || "Clip", size: file.size, addedAt: Date.now(), ...(duration ? { duration } : {}) };
+  const { duration, thumb } = await probeVideo(file);
+  const meta: ClipMeta = {
+    id: uid(), name: file.name || "Clip", title: `Clip ${part.clips.length + 1}`, size: file.size, addedAt: Date.now(),
+    ...(duration ? { duration } : {}), ...(thumb ? { thumb } : {}),
+  };
   await db.transaction("rw", [db.parts, db.clipBlobs], async () => {
     await db.clipBlobs.put({ id: meta.id, blob: file });
     await db.parts.update(partId, { clips: [...part.clips, meta] });
   });
   return meta;
+}
+
+/** Standbild für Clips, die noch keins haben (ältere Clips). */
+export async function ensureThumbs(partId: string): Promise<void> {
+  const part = await db.parts.get(partId);
+  if (!part) return;
+  for (const c of part.clips) {
+    if (c.thumb) continue;
+    const blob = await db.clipBlobs.get(c.id);
+    if (!blob) continue;
+    const { duration, thumb } = await probeVideo(blob.blob);
+    if (!thumb && !duration) continue;
+    const cur = await db.parts.get(partId);
+    if (!cur) return;
+    await db.parts.update(partId, { clips: cur.clips.map((x) => (x.id === c.id ? { ...x, ...(thumb ? { thumb } : {}), ...(duration && !x.duration ? { duration } : {}) } : x)) });
+  }
 }
 
 export async function removeClip(partId: string, clipId: string): Promise<() => Promise<void>> {
@@ -215,22 +239,50 @@ export async function setClipRange(partId: string, clipId: string, start: number
   await db.parts.update(partId, { clips: part.clips.map((c) => (c.id === clipId ? { ...c, start, end } : c)) });
 }
 
-export async function renameClip(partId: string, clipId: string, name: string) {
+/** Titel eines Clips ändern (der Dateiname bleibt unverändert). */
+export async function renameClip(partId: string, clipId: string, title: string) {
   const part = await db.parts.get(partId);
-  if (!part || !name.trim()) return;
-  await db.parts.update(partId, { clips: part.clips.map((c) => (c.id === clipId ? { ...c, name: name.trim() } : c)) });
+  if (!part || !title.trim()) return;
+  await db.parts.update(partId, { clips: part.clips.map((c) => (c.id === clipId ? { ...c, title: title.trim() } : c)) });
 }
 
-function videoDuration(file: Blob): Promise<number | undefined> {
+/** Dauer und kleines Standbild eines Videos, lokal per Canvas. Ohne Browser (Tests) oder bei Fehlern: leer. */
+export function probeVideo(file: Blob): Promise<{ duration?: number; thumb?: string }> {
   return new Promise((resolve) => {
-    if (typeof document === "undefined") return resolve(undefined);
+    if (typeof document === "undefined") return resolve({});
     const v = document.createElement("video");
     const url = URL.createObjectURL(file);
-    const done = (d?: number) => { URL.revokeObjectURL(url); resolve(d && isFinite(d) ? d : undefined); };
-    v.preload = "metadata";
-    v.onloadedmetadata = () => done(v.duration);
+    let finished = false;
+    const done = (duration?: number, thumb?: string) => {
+      if (finished) return;
+      finished = true;
+      URL.revokeObjectURL(url);
+      resolve({ duration: duration && isFinite(duration) ? duration : undefined, thumb });
+    };
+    const frame = () => {
+      try {
+        const w = v.videoWidth, h = v.videoHeight;
+        if (!w || !h) return done(v.duration);
+        const W = 240, H = Math.max(1, Math.round((W * h) / w));
+        const c = document.createElement("canvas");
+        c.width = W; c.height = H;
+        c.getContext("2d")!.drawImage(v, 0, 0, W, H);
+        done(v.duration, c.toDataURL("image/jpeg", 0.7));
+      } catch { done(v.duration); }
+    };
+    v.muted = true;
+    v.preload = "auto";
+    v.playsInline = true;
+    v.setAttribute("playsinline", "");
+    v.onloadedmetadata = () => {
+      const d = v.duration;
+      // Bild kurz nach dem Anfang (nicht das schwarze erste Bild)
+      try { v.currentTime = isFinite(d) && d > 0 ? Math.min(0.4, d / 4) : 0; } catch { frame(); }
+    };
+    v.onseeked = frame;
+    v.onloadeddata = () => { if (!finished && v.readyState >= 2 && v.currentTime > 0) frame(); };
     v.onerror = () => done();
-    window.setTimeout(() => done(), 4000);
+    window.setTimeout(() => (v.videoWidth ? frame() : done(isFinite(v.duration) ? v.duration : undefined)), 5000);
     v.src = url;
   });
 }
@@ -266,6 +318,10 @@ export async function exportClipFiles(): Promise<File[]> {
     const b = await db.recBlobs.get(r.id);
     if (b) files.push(new File([b.blob], recordingFileName(r), { type: b.blob.type || r.mime || "audio/mp4" }));
   }
+  for (const u of await db.units.toArray()) {
+    const b = u.hasCover ? await db.covers.get(u.id) : undefined;
+    if (b) files.push(new File([b.blob], coverFileName(u.id, u.title), { type: b.blob.type || "image/jpeg" }));
+  }
   return files;
 }
 
@@ -274,15 +330,19 @@ export async function importClipFiles(files: File[]): Promise<{ matched: number;
   const parts = await db.parts.toArray();
   const known = new Set(parts.flatMap((p) => p.clips.map((c) => c.id)));
   const knownRec = new Set((await db.recordings.toCollection().primaryKeys()) as string[]);
+  const knownCover = new Set((await db.units.filter((u) => !!u.hasCover).primaryKeys()) as string[]);
   let matched = 0, unmatched = 0;
   for (const f of files) {
-    const m = /skills-(clip|aufnahme)_([a-z0-9]+)_/i.exec(f.name);
+    const m = /skills-(clip|aufnahme|bild)_([a-z0-9]+)_/i.exec(f.name);
     const id = m?.[2];
     if (id && m?.[1].toLowerCase() === "clip" && known.has(id)) {
       await db.clipBlobs.put({ id, blob: f });
       matched++;
     } else if (id && m?.[1].toLowerCase() === "aufnahme" && knownRec.has(id)) {
       await db.recBlobs.put({ id, blob: f });
+      matched++;
+    } else if (id && m?.[1].toLowerCase() === "bild" && knownCover.has(id)) {
+      await db.covers.put({ id, blob: f });
       matched++;
     } else unmatched++;
   }
@@ -380,4 +440,59 @@ export async function setPartMetronome(id: string, patch: { bpm?: number; meter?
 }
 export async function setUnitMetronome(id: string, patch: { bpm?: number; meter?: string }) {
   await db.units.update(id, patch);
+}
+
+// ---------------- Titelbild eines Stücks ----------------
+
+export function coverFileName(unitId: string, title: string): string {
+  const base = title.replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "bild";
+  return `skills-bild_${unitId}_${base}.jpg`;
+}
+
+/** Ein oder zwei Buchstaben für den Platzhalter („Homecoming – Kanye West“ → „HK“). */
+export function initials(title: string): string {
+  const words = title.split(/[\s–—-]+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  const letters = words.slice(0, 2).map((w) => (w.match(/[\p{L}\p{N}]/u)?.[0] ?? "").toUpperCase());
+  return letters.join("") || "♪";
+}
+
+export async function setUnitCover(unitId: string, blob: Blob): Promise<void> {
+  await db.transaction("rw", [db.units, db.covers], async () => {
+    await db.covers.put({ id: unitId, blob });
+    await db.units.update(unitId, { hasCover: true });
+  });
+}
+
+export async function removeUnitCover(unitId: string): Promise<() => Promise<void>> {
+  const before = await db.covers.get(unitId);
+  await db.transaction("rw", [db.units, db.covers], async () => {
+    await db.covers.delete(unitId);
+    await db.units.update(unitId, { hasCover: false });
+  });
+  return async () => {
+    await db.transaction("rw", [db.units, db.covers], async () => {
+      if (before) await db.covers.put(before);
+      await db.units.update(unitId, { hasCover: !!before });
+    });
+  };
+}
+
+/** Titelbilder, die laut Stück da sein sollten, aber auf diesem Gerät fehlen. */
+export async function missingCoverIds(): Promise<Set<string>> {
+  const ids = (await db.units.filter((u) => !!u.hasCover).primaryKeys()) as string[];
+  const have = new Set((await db.covers.toCollection().primaryKeys()) as string[]);
+  return new Set(ids.filter((id) => !have.has(id)));
+}
+
+/**
+ * Zuschnitt auf ein Quadrat: Bild füllt das Fenster (Seitenlänge `view`), `zoom` ≥ 1, `x`/`y` = Verschiebung des Bildes in Fensterpixeln.
+ * Die Verschiebung wird so begrenzt, dass das Bild das Fenster immer ganz füllt. Gibt den Ausschnitt im Originalbild zurück.
+ */
+export function coverCrop(w: number, h: number, view: number, zoom: number, x: number, y: number) {
+  const z = Math.max(1, zoom);
+  const scale = (view / Math.min(w, h)) * z;
+  const dw = w * scale, dh = h * scale;
+  const cx = Math.min(0, Math.max(view - dw, (view - dw) / 2 + x));
+  const cy = Math.min(0, Math.max(view - dh, (view - dh) / 2 + y));
+  return { scale, left: cx, top: cy, sx: -cx / scale, sy: -cy / scale, size: view / scale };
 }

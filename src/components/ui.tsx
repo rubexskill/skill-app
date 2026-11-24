@@ -77,10 +77,11 @@ interface NavPageProps {
   leading?: ReactNode;
   trailing?: ReactNode;
   header?: ReactNode;
+  cover?: ReactNode;
   children: ReactNode;
 }
 
-export function NavPage({ title, eyebrow, sub, back, leading, trailing, header, children }: NavPageProps) {
+export function NavPage({ title, eyebrow, sub, back, leading, trailing, header, cover, children }: NavPageProps) {
   const [scrolled, setScrolled] = useState(false);
   const scrolledRef = useRef(false);
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -111,10 +112,13 @@ export function NavPage({ title, eyebrow, sub, back, leading, trailing, header, 
       </header>
       <div className="scroller" onScroll={onScroll}>
         <div className="navbar-spacer" />
-        <div className="large-title-wrap">
-          {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-          <h1 className="large-title">{title}</h1>
-          {sub && <div className="large-sub">{sub}</div>}
+        <div className={`large-title-wrap${cover ? " has-cover" : ""}`}>
+          {cover}
+          <div className="large-title-text">
+            {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+            <h1 className="large-title">{title}</h1>
+            {sub && <div className="large-sub">{sub}</div>}
+          </div>
         </div>
         {header}
         <div className="page-content">{children}</div>

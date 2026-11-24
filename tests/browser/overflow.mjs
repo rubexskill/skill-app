@@ -190,8 +190,23 @@ async function run() {
     const hasHero = await page.locator(".page:not(.is-covered) .hero").count();
     const hasTotal = await page.locator(".total-card").count();
     if (hasHero || !hasTotal) failures.push(`${width}px · Klavierstück: Timer-Ring statt Gesamtkarte (hero ${hasHero}, total ${hasTotal})`);
-    await page.locator(".unit-card").first().click(); await page.waitForTimeout(800);
+    // Raster: „Neues Stück“ als erste Karte, 2 Spalten
+    const gridInfo = await page.evaluate(() => { const g = document.querySelector(".page[aria-hidden='false'] .unit-grid"); if (!g) return null; const k = [...g.children].map((c) => c.getBoundingClientRect()); return { n: k.length, first: g.children[0].className, sameRow: Math.abs(k[0].top - k[1].top) < 2, wide: k[0].width }; });
+    if (!gridInfo || gridInfo.n < 2 || gridInfo.first !== "unit-new" || !gridInfo.sameRow) failures.push(`${width}px · Stück-Raster: ${JSON.stringify(gridInfo)}`);
+    await page.evaluate(([sid]) => window.db.units.put({ id: "u2", skillId: sid, title: "Sehr langer Stückname " + "x".repeat(60), status: "lerne", note: "", nextNote: null, order: 1, createdAt: Date.now(), hasCover: true }), [await page.evaluate(() => window.db.units.get('u1').then((x) => x.skillId))]); await page.waitForTimeout(500);
+    await check("Stück-Raster (Platzhalter, Bild fehlt)");
+    await page.locator(".unit-tile").first().click(); await page.waitForTimeout(800);
     await check("Unterpunkt");
+    // Titelbild wählen und zuschneiden (lokal)
+    const png = await page.evaluate(() => { const c = document.createElement("canvas"); c.width = 600; c.height = 400; const x = c.getContext("2d"); x.fillStyle = "#c46"; x.fillRect(0, 0, 600, 400); x.fillStyle = "#fff"; x.fillRect(200, 100, 200, 200); return c.toDataURL("image/png").split(",")[1]; });
+    await page.locator('.page[aria-hidden="false"] .ucover-btn').click(); await page.waitForTimeout(400);
+    await page.getByText("Aus der Mediathek wählen").click({ timeout: 3000 }).catch(() => {});
+    await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") }); await page.waitForTimeout(700);
+    await check("Titelbild zuschneiden");
+    await page.getByRole("button", { name: "Sichern" }).last().click(); await page.waitForTimeout(700);
+    const coverState = await page.evaluate(async () => ({ n: await window.db.covers.count(), has: (await window.db.units.get("u1")).hasCover }));
+    if (coverState.n !== 1 || !coverState.has) failures.push(`${width}px · Titelbild nicht gespeichert: ${JSON.stringify(coverState)}`);
+    await check("Unterpunkt mit Titelbild");
     // eingeklappt → jede Zeile einzeln aufklappen und prüfen
     for (const name of ["Metronom", "Aufnahmen"]) {
       const head = page.locator('.page[aria-hidden="false"] .fold-head', { hasText: name }).first();
@@ -234,6 +249,38 @@ async function run() {
     await page.locator('.page[aria-hidden="false"] .fold-head', { hasText: "Notizen zum Stück" }).click().catch(() => {}); await page.waitForTimeout(300); await check("Unterpunkt Notizen offen");
     await page.locator(".part-main").first().click(); await page.waitForTimeout(800);
     await check("Abschnitt");
+    await page.evaluate(async () => { const c = document.createElement("canvas"); c.width = 160; c.height = 100; const ctx = c.getContext("2d"); ctx.fillStyle = "#468"; ctx.fillRect(0, 0, 160, 100); const t = c.toDataURL("image/jpeg", 0.7); const p = await window.db.parts.get("p1"); p.clips[0].thumb = t; await window.db.parts.put(p); await window.db.clipBlobs.put({ id: "c1", blob: new Blob([new Uint8Array(20)], { type: "video/mp4" }) }); });
+    await page.waitForTimeout(500);
+    // Clip-Zeile: Titel „Clip 1“, nur Dauer, kein Dateiname, keine Speicherangabe
+    const rowTxt = await page.locator('.page[aria-hidden="false"] .clip-row').first().innerText();
+    if (/\.mp4|MB|KB/.test(rowTxt) || !/Clip 1/.test(rowTxt) || !/0:12/.test(rowTxt)) failures.push(`${width}px · Clip-Zeile: ${JSON.stringify(rowTxt)}`);
+    const pageTxt = await page.locator('.page-content:has(.clip-row)').first().innerText();
+    if (/\d\s?(MB|KB)\b/.test(pageTxt)) failures.push(`${width}px · Abschnitt zeigt Speicherangabe: ${pageTxt.match(/.{0,30}\d\s?(MB|KB).{0,10}/)}`);
+    // Clip öffnet Vollbild-Player: schwarz, Schließen oben links, Tempo, Schleife
+    await page.locator('.page[aria-hidden="false"] .clip-row').first().click(); await page.waitForTimeout(700);
+    const fsi = await page.evaluate(() => { const f = document.querySelector(".fsp"); if (!f) return null; const r = f.getBoundingClientRect(); const x = document.querySelector(".fsp-x"); const xr = x?.getBoundingClientRect(); return { w: r.width, h: r.height, bg: getComputedStyle(f).backgroundColor, closeLeft: xr ? xr.left < r.width / 2 && xr.top < 140 : false }; });
+    if (!fsi || fsi.w < width - 1 || fsi.bg !== "rgb(0, 0, 0)" || !fsi.closeLeft) failures.push(`${width}px · Vollbild-Player: ${JSON.stringify(fsi)}`);
+    await check("Vollbild-Player");
+    await page.locator(".fsp-cap", { hasText: "0,5×" }).first().click({ timeout: 2000 }).catch(() => failures.push(`${width}px · Tempo-Kapsel 0,5× fehlt`));
+    const speed = await page.evaluate(() => document.querySelector(".fsp video")?.playbackRate);
+    if (speed !== 0.5) failures.push(`${width}px · Tempo 0,5× nicht gesetzt: ${speed}`);
+    const pitch = await page.evaluate(() => { const v = document.querySelector(".fsp video"); return v ? (v.preservesPitch !== false) : null; });
+    if (pitch === false) failures.push(`${width}px · Tonhöhe wird nicht erhalten`);
+    await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(400);
+    await check("Vollbild-Player quer");
+    const fsl = await page.evaluate(() => { const f = (document.querySelector(".fsp") ?? document.body).getBoundingClientRect(); return { w: f.width, h: f.height, sw: document.documentElement.scrollWidth }; });
+    if (fsl.sw > 845) failures.push(`${width}px · Player quer läuft über: ${JSON.stringify(fsl)}`);
+    await page.setViewportSize({ width, height: 800 }); await page.waitForTimeout(300);
+    await page.mouse.click(width / 2, 300); await page.waitForTimeout(300);
+    await page.keyboard.press("Escape"); await page.waitForTimeout(500);
+    if (await page.locator(".fsp").count()) failures.push(`${width}px · Player lässt sich nicht schließen`);
+    // Umbenennen per Menü
+    await page.locator('.page[aria-hidden="false"] .clip-more').first().click(); await page.waitForTimeout(400);
+    await page.getByText("Umbenennen").click({ timeout: 2000 }).catch(() => {}); await page.waitForTimeout(400);
+    await check("Clip umbenennen");
+    await page.locator(".sheet input, .sheet textarea").last().fill("Rechte Hand"); await page.getByRole("button", { name: "Sichern" }).last().click(); await page.waitForTimeout(500);
+    const renamed = await page.evaluate(() => window.db.parts.get("p1").then((p) => p.clips[0].title));
+    if (renamed !== "Rechte Hand") failures.push(`${width}px · Clip nicht umbenannt: ${renamed}`);
     for (const name of ["Metronom", "Aufnahmen"]) {
       const head = page.locator('.page[aria-hidden="false"] .fold-head', { hasText: name }).first();
       await head.scrollIntoViewIfNeeded(); await head.click(); await page.waitForTimeout(350);

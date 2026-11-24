@@ -297,7 +297,7 @@ function WideShell() {
 }
 
 function Shell() {
-  return useMedia("(min-width: 768px)") ? <WideShell /> : <PhoneShell />;
+  return useMedia("(min-width: 768px) and (min-height: 560px)") ? <WideShell /> : <PhoneShell />;
 }
 
 export default function App() {
