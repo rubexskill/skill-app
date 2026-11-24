@@ -64,7 +64,7 @@ export function Today() {
       {loaded && items === 0 && !hasCards ? (
         <>
           <EmptyState icon="today" title="Heute ist nichts geplant" text="Schalte Skills oder Gewohnheiten auf „Aktiv“ oder gib To-dos ein Datum – dann erscheinen sie hier." />
-          <Group><Row title="Gewohnheiten verwalten" tone="accent" chevron onClick={() => nav.push({ type: "section", id: "gewohnheiten" })} /></Group>
+          <Group className="is-card"><Row title="Gewohnheiten verwalten" tone="accent" chevron onClick={() => nav.push({ type: "section", id: "gewohnheiten" })} /></Group>
         </>
       ) : loaded ? (
         <>
@@ -77,7 +77,7 @@ export function Today() {
           </section>
 
           {hasCards && (
-            <Group header="Karteikarten" footer="Fällige Karten wiederholst du kurz – danach sind sie für heute erledigt.">
+            <Group className="is-card" header="Karteikarten" footer="Fällige Karten wiederholst du kurz – danach sind sie für heute erledigt.">
               {dueCards!.map(({ skill, n }) => (
                 <Row key={skill.id} className="cv" style={catVars(skill.kategorie)} title={skill.title} subtitle={`${n} ${n === 1 ? "Karte" : "Karten"} fällig`}
                   leading={<span className="icon-tile tile-cat"><Icon name="cards" size={17} /></span>} chevron onClick={() => setCardSkill(skill)} />
@@ -86,7 +86,7 @@ export function Today() {
           )}
 
           {practice.length > 0 && (
-            <Group header="Üben">
+            <Group className="is-card" header="Üben">
               {practice.map((s) => {
                 const m = minutesToday.get(s.id) ?? 0;
                 return (
@@ -100,7 +100,7 @@ export function Today() {
             </Group>
           )}
 
-          <Group header={<span className="head-with-link">Gewohnheiten<button className="text-btn" onClick={() => nav.push({ type: "section", id: "gewohnheiten" })}>Alle</button></span>}
+          <Group className="is-card" header={<span className="head-with-link">Gewohnheiten<button className="text-btn" onClick={() => nav.push({ type: "section", id: "gewohnheiten" })}>Alle</button></span>}
             footer={habits.length ? undefined : "Unter „Gewohnheiten“ einschalten, was täglich hier stehen soll."}>
             {habits.map((h) => {
               const st = habitStreak(h.id, checked);
@@ -115,7 +115,7 @@ export function Today() {
           </Group>
 
           {dueTodos.length > 0 && (
-            <Group header="To-dos" footer="Nach links wischen zum Löschen.">
+            <Group className="is-card" header="To-dos" footer="Nach links wischen zum Löschen.">
               {dueTodos.map((t) => {
                 const isOn = t.done || completing.has(t.id);
                 const overdue = !t.done && t.due! < today;

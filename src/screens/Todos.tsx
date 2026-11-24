@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type Todo } from "../db";
-import { addDays, addTodo, dayKey, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
+import { addDays, addTodo, normalize, dayKey, dueLabel, loadSetting, saveSetting, setTodoDone, startOfDay } from "../logic";
 import { parseQuickTodo, todoBucket, type TodoBucket } from "../quickparse";
 import { catVars } from "../categories";
+import { Ring } from "./parts";
 import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
 import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -56,7 +57,7 @@ export function Todos() {
   const [due, setDue] = useState<string | null | undefined>(undefined);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [listsOpen, setListsOpen] = useState(false);
-  const [showDone, setShowDone] = useState(false);
+  const [showDoneIn, setShowDoneIn] = useState<Set<string>>(new Set());
   const [only, setOnly] = useState(false);
   const { completing, complete } = useCompleting();
 
@@ -71,14 +72,6 @@ export function Todos() {
 
   const today = dayKey(new Date());
   const listName = (id: string) => lists?.find((l) => l.id === id)?.name ?? "";
-
-  const visible = (todos ?? []).filter((t) => (listId === ALL_LISTS || t.listId === listId) && (!only || t.unsorted));
-  const groups = useMemo(() => {
-    const open = visible.filter((t) => !t.done).sort((a, b) => (a.due ?? "9").localeCompare(b.due ?? "9") || a.createdAt - b.createdAt);
-    const by: Record<TodoBucket, Todo[]> = { overdue: [], today: [], week: [], later: [], none: [] };
-    for (const t of open) by[todoBucket(t.due)].push(t);
-    return { by, done: visible.filter((t) => t.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)) };
-  }, [visible, today]);
 
   // Schnelleingabe: „Zahnarzt morgen #gesundheit“
   const parsed = useMemo(() => (text.trim() ? parseQuickTodo(text, lists ?? []) : null), [text, lists]);
@@ -112,28 +105,75 @@ export function Todos() {
     });
   };
 
-  const row = (t: Todo) => {
+  /** In der Liste „Schule“ steht das Fach vor dem Doppelpunkt: „Mathe: Aufgaben 3“. */
+  const subjectOf = (t: Todo) => {
+    const m = /^([^:\n]{2,24}):\s+(\S.*)$/.exec(t.text);
+    return m ? { subject: m[1].trim(), text: m[2] } : { subject: "", text: t.text };
+  };
+
+  const row = (t: Todo, shown = t.text) => {
     const isOn = t.done || completing.has(t.id);
     const overdue = !t.done && !!t.due && t.due < today;
-    const showDue = !!t.due && !t.done && t.due !== today;
+    const isToday = !t.done && t.due === today;
     return (
       <SwipeRow key={t.id}
         leading={t.done ? { label: "Offen", tone: "gray", onClick: () => void setTodoDone(t.id, false) } : { label: "Erledigt", tone: "ok", onClick: () => complete(t.id) }}
         actions={[{ label: "Löschen", tone: "danger", onClick: () => remove(t) }, ...(t.done ? [] : [{ label: "Verschieben", tone: "gray" as const, onClick: () => reschedule(t) }])]}>
-        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{t.text}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
-          detail={(showDue || listId === ALL_LISTS) ? (
-            <span className="todo-meta">
-              {showDue && <span className={overdue ? "overdue" : ""}>{dueLabel(t.due!)}</span>}
-              {listId === ALL_LISTS && <span className="todo-list cv" style={listStyle(t.listId, lists)}><i />{listName(t.listId)}</span>}
-            </span>
-          ) : undefined}
+        <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{shown}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
+          detail={t.due && !t.done ? <span className={`todo-due${overdue ? " is-overdue" : isToday ? " is-today" : ""}`}>{dueLabel(t.due)}</span> : undefined}
           leading={<CheckCircle checked={isOn} label={t.text} onToggle={() => (t.done ? void setTodoDone(t.id, false) : complete(t.id))} />}
           onClick={() => setEditing(t)} />
       </SwipeRow>
     );
   };
 
-  const totalOpen = BUCKETS.reduce((n, b) => n + groups.by[b.key].length, 0);
+  const openSort = (a: Todo, b: Todo) => (a.due ?? "9").localeCompare(b.due ?? "9") || a.createdAt - b.createdAt;
+
+  /** Eine Karte pro Liste: Ring, Titel, Anzahl offen, darunter die To-dos. */
+  const listCard = (l: { id: string; name: string }) => {
+    const all = (todos ?? []).filter((t) => t.listId === l.id && (!only || t.unsorted));
+    const open = all.filter((t) => !t.done).sort(openSort);
+    const done = all.filter((t) => t.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
+    const isSchool = normalize(l.name) === "schule";
+    const total = all.length;
+    const subjects = isSchool ? [...new Set(open.map((t) => subjectOf(t).subject))].sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b, "de")) : [];
+    const doneOpen = showDoneIn.has(l.id);
+    return (
+      <Group key={l.id} className="is-card todo-card cv"
+        header={
+          <span className="todo-card-head cv" style={listStyle(l.id, lists)}>
+            <Ring value={total ? done.length / total : 0} size={30} stroke={4} className="todo-ring" />
+            <span className="todo-card-title">{l.name}</span>
+            <span className="todo-card-count">{open.length === 0 ? (total ? "alles erledigt" : "leer") : `${open.length} offen`}</span>
+          </span>
+        }>
+        {open.length === 0 && done.length === 0 && <div className="todo-empty">Noch nichts in dieser Liste.</div>}
+        {isSchool
+          ? subjects.map((sub) => (
+              <Fragment key={sub || "_"}>
+                <div className="todo-sub is-subject">{sub || "Ohne Fach"}</div>
+                {open.filter((t) => subjectOf(t).subject === sub).map((t) => row(t, subjectOf(t).text))}
+              </Fragment>
+            ))
+          : BUCKETS.map((b) => {
+              const items = open.filter((t) => todoBucket(t.due) === b.key);
+              return items.length ? (
+                <Fragment key={b.key}>
+                  {(open.length > 4 || b.key === "overdue") && <div className={`todo-sub${b.key === "overdue" ? " is-overdue" : ""}`}>{b.title}</div>}
+                  {items.map((t) => row(t))}
+                </Fragment>
+              ) : null;
+            })}
+        {done.length > 0 && (
+          <button className="todo-done-toggle" onClick={() => setShowDoneIn((p) => { const n = new Set(p); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n; })} aria-expanded={doneOpen}>
+            Erledigt · {done.length}<Icon name="chevron-down" size={12} className="section-chevron" />
+          </button>
+        )}
+        {doneOpen && done.slice(0, 30).map((t) => row(t, isSchool ? subjectOf(t).text : t.text))}
+      </Group>
+    );
+  };
+
   const count = (id: string) => (todos ?? []).filter((t) => !t.done && (id === ALL_LISTS || t.listId === id)).length;
 
   return (
@@ -152,11 +192,11 @@ export function Todos() {
         </div>
       }>
       <TidyStrip kinds={["todo"]} only={only} onToggle={setOnly} />
-      <Group footer={parsed && (parsed.due || parsed.listId) ? (
+      <Group className="is-card compose-card" footer={parsed && (parsed.due || parsed.listId) ? (
         <span className="quick-hint">
           {parsed.due ? dueLabel(parsed.due) : ""}{parsed.due && parsed.listId ? " · " : ""}{parsed.listId ? `Liste „${listName(parsed.listId)}“` : ""}
         </span>
-      ) : text.trim() ? undefined : "Tipp: „Zahnarzt morgen #gesundheit“ setzt Datum und Liste."}>
+      ) : text.trim() ? undefined : "Tipp: „Zahnarzt morgen #gesundheit“ setzt Datum und Liste. In „Schule“ ordnet „Mathe: Aufgabe“ nach Fach."}>
         <div className="row input-row compose">
           <input value={text} placeholder={listId === ALL_LISTS ? "Neues To-do" : `Neu in „${listName(listId)}“`} enterKeyHint="done"
             onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && void add()} />
@@ -176,24 +216,8 @@ export function Todos() {
         )}
       </Group>
 
-      {todos && totalOpen === 0 && groups.done.length === 0 && (
-        <EmptyState icon="todo" title="Keine To-dos" text="Schreib oben etwas hinein. Mit Datum erscheint es auch unter „Heute“." />
-      )}
-      {todos && totalOpen === 0 && groups.done.length > 0 && <EmptyState icon="today" title="Alles erledigt" />}
-
-      {BUCKETS.map((b) => groups.by[b.key].length > 0 && (
-        <Group key={b.key} className="todo-group" header={
-          <span className={b.key === "overdue" ? "overdue" : ""}>{b.title}<span className="section-count">{groups.by[b.key].length}</span></span>
-        }>{groups.by[b.key].map(row)}</Group>
-      ))}
-      {groups.done.length > 0 && (
-        <Group className={`todo-group${showDone ? "" : " is-collapsed"}`}
-          header={<button className="section-toggle" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone}>
-            <span>Erledigt</span><span className="section-count">{groups.done.length}</span><Icon name="chevron-down" size={13} className="section-chevron" />
-          </button>}>
-          {showDone && groups.done.slice(0, 30).map(row)}
-        </Group>
-      )}
+      {todos && lists && (listId === ALL_LISTS ? lists : lists.filter((l) => l.id === listId)).map(listCard)}
+      {todos && lists && lists.length === 0 && <EmptyState icon="todo" title="Keine Listen" text="Lege über das Plus oben eine Liste an." />}
 
       <TodoSheet todo={editing} onClose={() => setEditing(null)} />
       <ListsSheet open={listsOpen} onClose={() => setListsOpen(false)} onCreated={setListId} />

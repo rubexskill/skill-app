@@ -553,6 +553,21 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
   );
 }
 
+/** Einklappbarer Abschnitt als Karte (Skill-Detail): zu, bis man ihn öffnet. */
+export function Fold({ title, summary, defaultOpen = false, children }: { title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`fold${open ? " is-open" : ""}`}>
+      <button className="fold-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="fold-title">{title}</span>
+        {summary != null && summary !== "" && <span className="fold-summary">{summary}</span>}
+        <Icon name="chevron-down" size={14} className="fold-chev" />
+      </button>
+      {open && <div className="fold-body">{children}</div>}
+    </section>
+  );
+}
+
 /** Ausklappbarer Bereich */
 export function Disclosure({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);

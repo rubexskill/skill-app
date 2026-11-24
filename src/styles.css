@@ -1432,3 +1432,95 @@ html.has-sorter, html.has-sorter body { overscroll-behavior: none; }
 .tidy-warn { color: var(--st-rausfinden); }
 .tidy-row.is-destructive { background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated)); }
 .tidy-del { color: var(--danger); }
+
+/* ---------------- Kein seitliches Verschieben ---------------- */
+html, body, #root { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x: none; }
+.app-shell, .tab-pane, .stack, .page, .navpage { max-width: 100%; overflow-x: hidden; }
+.scroller { overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; }
+:is(.row, .row-main, .group, .group-body, .swipe, .swipe-content, .profile, .profile-block, .detail, .page-content, .section-head-row, .search-chips, .safety, .record, .panel, .dos-sec, .dos-body, .dos-video, .dos-ampel, .dossier) { min-width: 0; max-width: 100%; }
+:is(.row, .section-head-row, .search-chips, .safety, .dos-video, .dos-ampel, .dos-plan > div, .head-with-count) > * { min-width: 0; }
+:is(.row-title, .row-subtitle, .row-detail, .profile p, .profile-about, .profile-label, .detail p, .one-liner, .safety p, .search-chip, .dos-body, .dos-body li, .dos-video span, .dos-sources a, .dos-ampel p, .sheet-lead, .step-text, .eyebrow, .large-sub, .group-header, .group-footer, .empty-text, .toast, .note-text) { overflow-wrap: anywhere; word-break: normal; }
+.section-head-row { flex-wrap: wrap; }
+.section-head-row .block-title { flex: 1 1 auto; min-width: 0; }
+.search-chip { max-width: 100%; white-space: normal; text-align: left; }
+.chips, .search-chips { flex-wrap: wrap; }
+.row-detail { flex: none; max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-leading, .row > .check, .row-chevron { flex: none; }
+.row-main { flex: 1 1 0; }
+
+/* ---------------- Gemeinsame Maße für Unterseiten ---------------- */
+:root {
+  --r-card: 20px;       /* Eckenradius aller Karten */
+  --gap: 14px;          /* Abstand zwischen Karten */
+  --pad: 16px;          /* Innenabstand von Karten */
+  --fs-s: 13px;         /* kleine Schrift */
+  --fs-m: 15px;         /* Fließtext */
+  --fs-l: 17px;         /* Zeilen */
+  --row-h: 48px;        /* Zeilenhöhe in Karten */
+}
+.group-body, .profile, .record, .panel, .disclosure-head, .dos-sec, .dos-ampel, .hero, .today-summary, .next-note { border-radius: var(--r-card); }
+.group { margin-bottom: 24px; }
+
+/* Gruppe als Karte: Titel im Kartenkopf */
+.group.is-card { background: var(--bg-elevated); border-radius: var(--r-card); overflow: hidden; margin-bottom: var(--gap); }
+.group.is-card .group-header { display: flex; align-items: center; gap: 10px; padding: 14px var(--pad) 4px; font-size: var(--fs-s); letter-spacing: 0.02em; text-transform: none; }
+.group.is-card .group-body { border-radius: 0; background: transparent; }
+.group.is-card .group-footer { padding: 0 var(--pad) 12px; }
+.group.is-card .group-body > * + *::before { left: var(--pad); opacity: 0.55; }
+
+/* Einklappbarer Abschnitt */
+.fold { margin: 0 16px var(--gap); background: var(--bg-elevated); border-radius: var(--r-card); overflow: hidden; }
+.fold-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 var(--pad); border: 0; background: none; color: var(--label); font-size: var(--fs-l); font-weight: 600; letter-spacing: -0.02em; text-align: left; }
+.fold-title { flex: none; }
+.fold-summary { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: var(--fs-m); font-weight: 400; color: var(--label-2); }
+.fold-head .fold-chev { flex: none; margin-left: auto; color: var(--label-3); transition: transform 0.3s var(--ease); }
+.fold-summary + .fold-chev { margin-left: 0; }
+.fold.is-open .fold-chev { transform: rotate(180deg); }
+.fold-body { padding: 0 0 6px; animation: fade-in 0.25s ease both; }
+.fold-body .group, .fold-body .profile, .fold-body .record, .fold-body .panel { margin: 0 0 4px; padding-left: 0; padding-right: 0; background: none; border-radius: 0; }
+.fold-body .profile { padding: 0 var(--pad) 8px; }
+.fold-body .record { padding: 0 var(--pad) 8px; }
+.fold-body > .group:first-child > .group-header, .fold-body .profile > .section-head-row .block-title, .fold-body .record > .section-head-row .block-title { display: none; }
+.fold-body .group-body { background: none; border-radius: 0; }
+.fold-body .group-header { padding-left: var(--pad); }
+.fold-body .group-footer { padding-left: var(--pad); padding-right: var(--pad); padding-bottom: 8px; }
+.fold-body .section-head-row { justify-content: flex-end; margin-bottom: 4px; }
+.fold-body .disclosure { margin: 0; padding: 0 var(--pad); }
+.fold-body .disclosure-head { background: var(--fill); }
+.fold-body .dossier .dos-sec, .fold-body .dossier .dos-ampel { background: var(--fill); }
+.fold-body .row, .fold-body .swipe, .fold-body .swipe-content { background: transparent; }
+.fold-body .input-row { padding-left: var(--pad); padding-right: var(--pad); }
+.fold-body .safety { margin-left: 0; }
+.hero { margin: 0 16px var(--gap); padding: 24px var(--pad) 20px; }
+.hero-num { font-size: 44px; }
+.hero-unit { font-size: 19px; }
+.next-note { margin: 0 16px var(--gap); }
+.today-summary { margin: 0 16px var(--gap); padding: 18px 20px; }
+.detail > .record, .detail > .profile { margin-bottom: var(--gap); }
+
+/* ---------------- To-dos als Listen-Karten ---------------- */
+.compose-card .compose { min-height: 54px; }
+.compose-card .group-footer { padding-top: 0; }
+.todo-card-head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 0 6px; }
+.todo-card-title { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--rounded); font-size: var(--fs-l); font-weight: 700; letter-spacing: -0.01em; color: var(--label); }
+.todo-card-count { flex: none; font-size: var(--fs-s); font-weight: 500; color: var(--label-2); }
+.todo-ring { flex: none; }
+.todo-ring .cring-track { stroke: color-mix(in srgb, var(--c) 18%, transparent); }
+.todo-ring .cring-val { stroke: var(--c); }
+.todo-sub { padding: 14px var(--pad) 2px; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--label-2); }
+.todo-sub.is-subject { color: var(--c); }
+.todo-sub.is-overdue { color: var(--danger); opacity: 0.85; }
+.group-body > .todo-sub::before, .group-body > .todo-sub + *::before { display: none; }
+.todo-row { min-height: var(--row-h); padding-top: 9px; padding-bottom: 9px; }
+.todo-row .row-title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.todo-row .row-detail { max-width: 38%; }
+.todo-due { font-size: var(--fs-s); color: var(--label-2); }
+.todo-due.is-today { color: var(--c); font-weight: 600; }
+.todo-due.is-overdue { color: var(--danger); opacity: 0.85; }
+.todo-empty { padding: 4px var(--pad) 16px; font-size: var(--fs-m); color: var(--label-2); }
+.todo-done-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; padding: 0 var(--pad); border: 0; background: none; color: var(--label-2); font-size: var(--fs-s); font-weight: 600; text-align: left; }
+.todo-done-toggle .section-chevron { margin-left: 0; }
+.todo-done-toggle[aria-expanded="true"] .section-chevron { transform: none; }
+.group-body > .todo-done-toggle::before { display: none; }
+.todo-card .row.is-tappable:active { background: var(--press); }
+.group.is-card .row-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

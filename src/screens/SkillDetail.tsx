@@ -5,7 +5,7 @@ import {
   type Movement, type Place, type Season, type Session, type Status, type Typ,
 } from "../db";
 import { bigTime, dailyMinutes, dayLabel, deleteSkill, elapsedLabel, hoursLabel, minutesLabel, timeLabel, updateSkill } from "../logic";
-import { AutoTextarea, Disclosure, Group, NavPage, Row, Segmented, SwipeRow, useNow, useUI } from "../components/ui";
+import { AutoTextarea, Fold, Group, NavPage, Row, Segmented, SwipeRow, useNow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { Heatmap } from "../components/Charts";
 import { useStack } from "../components/Stack";
@@ -16,6 +16,7 @@ import { CatBadge, Ring } from "./parts";
 import { CategorySheet, LinkSheet, MaterialSheet, typOptions, useAllMaterials } from "./SkillSheets";
 import { MetricSheet, SessionSheet } from "./EditSheets";
 import { ProfileCard } from "./Profile";
+import { dossierFor } from "./Dossier";
 import { TidyItemRows } from "./Tidy";
 import { MilestoneList } from "./Milestones";
 import { Records } from "./Records";
@@ -194,7 +195,7 @@ function SkillPage({ id }: { id: string }) {
         )}
 
         <section className={`hero${running ? " is-running" : ""}`}>
-          <Ring value={ringValue} size={236} stroke={16} className="hero-ring">
+          <Ring value={ringValue} size={196} stroke={12} className="hero-ring">
             {running ? (
               <>
                 <div className="hero-num">{elapsedLabel(elapsedMs)}</div>
@@ -220,32 +221,54 @@ function SkillPage({ id }: { id: string }) {
           )}
         </section>
 
-        {isSkill && <ProfileCard skill={skill} />}
+        {isSkill && (
+          <Fold title="Steckbrief" summary={dossierFor(skill.title) && (!skill.profile || skill.profile.ai) ? "Recherchiert · mit Quellen" : ""}>
+            <ProfileCard skill={skill} />
+          </Fold>
+        )}
 
-        {(isSkill || skill.milestones.length > 0) && <MilestoneList skill={skill} onAllDone={allDone} />}
-
-        {isSkill && <ExamGroup skill={skill} onPass={() => setStatus("kann")} />}
-
-        <Records skill={skill} />
+        {(isSkill || skill.milestones.length > 0) && (
+          <Fold title={isSkill ? "Meilensteine" : "Unterpunkte"} summary={skill.milestones.length ? `${skill.milestones.filter((m) => m.done).length} von ${skill.milestones.length}` : ""}>
+            <MilestoneList skill={skill} onAllDone={allDone} />
+          </Fold>
+        )}
 
         {isSkill && (
-          <Group header="Karteikarten">
-            <Row title="Karteikarten" subtitle={counts.total ? (counts.due ? `${counts.due} heute fällig` : "Heute nichts fällig") : "Eigene Karten zum Wiederholen anlegen"}
-              detail={counts.total ? String(counts.total) : undefined} chevron onClick={() => setCardsOpen(true)}
-              leading={<span className="icon-tile tile-soft"><Icon name="cards" size={17} /></span>} />
-          </Group>
+          <Fold title="Abschlusstest" summary={skill.test ? "vorhanden" : ""}>
+            <ExamGroup skill={skill} onPass={() => setStatus("kann")} />
+          </Fold>
         )}
+
+        <Fold title="Rekorde" summary={skill.metric ? skill.metric.label : ""}>
+          <Records skill={skill} />
+        </Fold>
+
+          {isSkill && (
+        <Fold title="Karteikarten" summary={counts.total ? (counts.due ? `${counts.due} fällig` : `${counts.total}`) : ""}>
+        <Group>
+          <Row title="Karteikarten" subtitle={counts.total ? (counts.due ? `${counts.due} heute fällig` : "Heute nichts fällig") : "Eigene Karten zum Wiederholen anlegen"}
+            detail={counts.total ? String(counts.total) : undefined} chevron onClick={() => setCardsOpen(true)}
+            leading={<span className="icon-tile tile-soft"><Icon name="cards" size={17} /></span>} />
+        </Group>
+        </Fold>
+      )}
+
 
         {skill.unsorted && <Group><TidyItemRows kind="skill" id={skill.id} unsorted /></Group>}
 
-        <Group header="Notizen">
+
+        <Fold title="Notizen" summary={notes.trim().split("\n")[0].slice(0, 40)}>
+        <Group>
           <div className="row input-row">
             <AutoTextarea value={notes} placeholder="Gedanken, Ziele, Tipps …" onChange={(e) => onNotes(e.target.value)}
               onBlur={() => { window.clearTimeout(notesTimer.current); if (notes !== skill.notes) set({ notes }); }} />
           </div>
         </Group>
 
-        <Group header="Links & Videos">
+        </Fold>
+
+        <Fold title="Links & Videos" summary={skill.links.length ? String(skill.links.length) : ""}>
+        <Group>
           {skill.links.map((l) => (
             <SwipeRow key={l.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeLink(l.id) }]}>
               <Row title={l.title || host(l.url)} subtitle={l.title ? host(l.url) : undefined}
@@ -256,8 +279,10 @@ function SkillPage({ id }: { id: string }) {
           <Row title="Link hinzufügen" tone="accent" leading={<Icon name="plus" size={18} />} onClick={() => setLinkOpen(true)} />
         </Group>
 
-        <Group header={<span className="head-with-count">Sessions{count > 0 && <span className="section-count">{minutesLabel(total)}</span>}</span>}
-          footer={count ? "Antippen zum Bearbeiten, nach links wischen zum Löschen." : undefined}>
+        </Fold>
+
+        <Fold title="Sessions" summary={count ? `${count} · ${minutesLabel(total)}` : ""}>
+        <Group footer={count ? "Antippen zum Bearbeiten, nach links wischen zum Löschen." : undefined}>
           {count > 0 && <div className="row heatmap-row"><Heatmap days={days} weeks={16} compact /></div>}
           {visibleSessions.map((s) => (
             <SwipeRow key={s.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => removeSession(s) }]}>
@@ -271,7 +296,10 @@ function SkillPage({ id }: { id: string }) {
           <Row title="Session hinzufügen" tone="accent" leading={<Icon name="plus" size={18} />} onClick={() => setSessionEdit({ open: true, session: null })} />
         </Group>
 
-        <Disclosure title="Details bearbeiten">
+        </Fold>
+
+        <Fold title="Details bearbeiten">
+
           <Group>
             <div className="row input-row labeled">
               <span className="input-label">Titel</span>
@@ -307,7 +335,7 @@ function SkillPage({ id }: { id: string }) {
           <Group>
             <Row title="Eintrag löschen" tone="danger" center onClick={confirmDelete} />
           </Group>
-        </Disclosure>
+        </Fold>
       </div>
 
       <CategorySheet open={catOpen} onClose={() => setCatOpen(false)} value={skill.kategorie} onSelect={(k) => set({ kategorie: k })} />

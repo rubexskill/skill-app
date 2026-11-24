@@ -36,10 +36,14 @@ Veröffentlicht auf GitHub Pages: https://rubexskill.github.io/skill-app/ (Konto
 - Keine personenbezogenen Angaben in Commits, Issues, Beschreibungen oder Anfragen an externe Dienste. Commit-Identität: `rubexskill <rubexskill@users.noreply.github.com>`.
 
 ## Testen
+- `npm run test:browser` (Playwright, Chromium): baut einen Test-Build und prüft alle Hauptseiten und einen Skill mit langem Steckbrief bei 375/390/430 px auf seitliches Verschieben (auch Wischen in To-dos). Vor jedem Design-Push laufen lassen; `CHROMIUM=<Pfad>` setzt den Browser, `SHOTS=<Ordner>` speichert Bilder, `DARK=1` dunkel.
 - `npm test` (Vitest, muss grün sein) · `npx tsc -b` (Typen) · `PUBLIC_BUILD=1 npm run build`
 - Browser-Test: Test-Build mit `PUBLIC_BUILD=1 VITE_EXPOSE=1 npx vite build --outDir <tmp>/dist-test --emptyOutDir`, dann Playwright (Edge, WebKit) mit `context.route` auf eine Fake-Adresse; Wischgesten per CDP-Touch (nur Chromium). Formate prüfen: iPhone/iPad, hoch/quer, hell/dunkel.
 - Ton lässt sich nur mit Fake-AudioContext prüfen; echte Hörprobe nur auf dem iPhone.
 - Bei jeder Änderung an Daten: Migration, Backup→Import und Abgleich mitprüfen.
+
+## Layout-Regeln
+- Nie horizontal scrollen: `html/body/#root` und `.scroller` haben `overflow-x: hidden`; Flex-/Grid-Kinder `min-width: 0`; lange Texte `overflow-wrap: anywhere`. Karten nutzen `--r-card`, `--gap`, `--pad` (Ende von `styles.css`); Unterseiten-Abschnitte sind `Group.is-card` oder `Fold` (zu, bis man ihn öffnet).
 
 ## Veröffentlichen
 Push auf `main` startet `.github/workflows/deploy.yml`: `npm ci` → `npm test` → Build (`PUBLIC_BUILD=1`) → Datenschutz-Prüfung → GitHub Pages. Erst veröffentlichen, wenn Tests und Typen grün sind. Nur auf ausdrücklichen Wunsch pushen.
