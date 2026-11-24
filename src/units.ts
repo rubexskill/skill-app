@@ -91,6 +91,26 @@ export async function movePart(id: string, dir: -1 | 1) {
   });
 }
 
+export async function addUnitNote(unitId: string, text: string) {
+  const t = text.trim();
+  if (!t) return;
+  const unit = await db.units.get(unitId);
+  if (!unit) return;
+  await db.units.update(unitId, { notes: [{ id: uid(), text: t, at: Date.now() }, ...(unit.notes ?? [])] });
+}
+
+export async function removeUnitNote(unitId: string, noteId: string): Promise<() => Promise<void>> {
+  const unit = await db.units.get(unitId);
+  const before = unit?.notes ?? [];
+  await db.units.update(unitId, { notes: before.filter((n) => n.id !== noteId) });
+  return async () => void (await db.units.update(unitId, { notes: before }));
+}
+
+/** Das frühere Einzelfeld `note` wird zur ersten Notiz der Liste. */
+export async function migrateUnitNote(unit: Unit) {
+  if (unit.note.trim() && !(unit.notes?.length)) await db.units.update(unit.id, { notes: [{ id: uid(), text: unit.note.trim(), at: unit.createdAt }], note: "" });
+}
+
 export async function addPartNote(partId: string, text: string) {
   const t = text.trim();
   if (!t) return;

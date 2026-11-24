@@ -254,7 +254,9 @@ export interface Unit extends Synced {
   skillId: string;
   title: string;
   status: UnitStatus;
+  /** Älteres Einzelfeld; Notizen stehen jetzt in `notes` */
   note: string;
+  notes?: PartNote[];
   nextNote: NextNote | null;
   order: number;
   createdAt: number;

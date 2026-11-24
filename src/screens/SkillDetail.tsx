@@ -184,6 +184,29 @@ function SkillPage({ id }: { id: string }) {
 
         {skill.nextNote && <NextNoteCard note={skill.nextNote} />}
 
+        {skill.useUnits ? (
+          <section className="total-card">
+            <div className="total-line">
+              <span className="total-label">Gesamt</span>
+              <span className="total-num">{t.big}<span className="total-unit">{t.unit}</span></span>
+              <span className="total-of">von {hoursLabel(skill.estMinutes)}</span>
+            </div>
+            <div className="total-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, (total / Math.max(1, skill.estMinutes)) * 100)}%` }} /></div>
+            {running && (
+              <div className="total-run">
+                <span>Läuft seit {timeLabel(skill.timerStart!)} · {elapsedLabel(elapsedMs)}</span>
+                {!skill.timerUnit && <button className="text-btn" onClick={() => void timer.toggle(skill)}>Stoppen</button>}
+              </div>
+            )}
+            {(builtInTrainer(skill) || counts.total > 0) && (
+              <button className="btn btn-secondary trainer-btn" onClick={() => setTrainOpen(true)}>
+                <Icon name="train" size={18} />
+                Trainieren
+                {counts.due > 0 && <span className="pill-count">{counts.due} fällig</span>}
+              </button>
+            )}
+          </section>
+        ) : (
         <section className={`hero${running ? " is-running" : ""}`}>
           <Ring value={ringValue} size={157} stroke={11} className="hero-ring">
             {running ? (
@@ -210,6 +233,7 @@ function SkillPage({ id }: { id: string }) {
             </button>
           )}
         </section>
+        )}
 
         {skill.useUnits && <UnitsSection skill={skill} />}
 

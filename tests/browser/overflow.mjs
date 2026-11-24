@@ -157,6 +157,8 @@ async function run() {
     }
     await tab("Inbox"); await page.waitForTimeout(500); await check("Inbox");
     await tab("Mehr"); await page.waitForTimeout(500); await check("Mehr");
+    await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Mehr unten");
+    await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = 0; });
     for (const n of ["Gewohnheiten", "Projekte", "Begriffe", "Wunschliste", "Statistik"]) {
       await click(page, n);
       await check(n);
@@ -180,10 +182,16 @@ async function run() {
     await page.getByText("Klavierstück", { exact: true }).first().click({ timeout: 4000 });
     await page.waitForTimeout(800);
     await check("Klavierstück");
+    const hasHero = await page.locator(".page:not(.is-covered) .hero").count();
+    const hasTotal = await page.locator(".total-card").count();
+    if (hasHero || !hasTotal) failures.push(`${width}px · Klavierstück: Timer-Ring statt Gesamtkarte (hero ${hasHero}, total ${hasTotal})`);
     await page.locator(".unit-card").first().click(); await page.waitForTimeout(800);
     await check("Unterpunkt");
+    await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Unterpunkt unten");
+    await page.locator(".fold-head", { hasText: "Notizen zum Stück" }).click().catch(() => {}); await page.waitForTimeout(300); await check("Unterpunkt Notizen offen");
     await page.locator(".part-main").first().click(); await page.waitForTimeout(800);
     await check("Abschnitt");
+    await page.locator(".scroller:visible").last().evaluate((el) => { el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300); await check("Abschnitt unten");
     await page.locator(".nav-back >> visible=true").last().click(); await page.waitForTimeout(650);
     await page.locator(".part-card .swipe-content").first().scrollIntoViewIfNeeded();
     const pbox = await page.locator(".part-card .swipe-content").first().boundingBox();

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { createSkill, deleteSkill, exportBackup, readBackup, restoreBackup, saveSessionNote, startTimer, stopTimer } from "../src/logic";
 import { FIRST_UNIT_TITLE, moveToFirstUnit } from "../src/unitsMigrate";
-import { addClip, addLoop, addPartNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, importClipFiles, missingClipIds, movePart, removeClip, storageWarning, unitProgress, exportClipFiles } from "../src/units";
+import { addClip, addLoop, addPartNote, addUnitNote, migrateUnitNote, removeUnitNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, importClipFiles, missingClipIds, movePart, removeClip, storageWarning, unitProgress, exportClipFiles } from "../src/units";
 import { applySync, exportSync, parseSync } from "../src/sync";
 
 beforeEach(async () => {
@@ -110,6 +110,26 @@ describe("Unterpunkte und Abschnitte", () => {
     expect([await db.units.count(), await db.parts.count(), await db.clipBlobs.count()]).toEqual([0, 0, 0]);
     await undo();
     expect([await db.units.count(), await db.parts.count(), await db.clipBlobs.count()]).toEqual([1, 1, 1]);
+  });
+});
+
+describe("Notizen zum Stück", () => {
+  it("das alte Einzelfeld wird zur ersten Notiz, weitere Notizen mit Zähler und Rückgängig", async () => {
+    const s = await piano();
+    const u = await createUnit(s.id, "Stück");
+    await db.units.update(u.id, { note: "Alte Notiz" });
+    await migrateUnitNote((await db.units.get(u.id))!);
+    let cur = (await db.units.get(u.id))!;
+    expect(cur.note).toBe("");
+    expect(cur.notes?.map((n) => n.text)).toEqual(["Alte Notiz"]);
+    await migrateUnitNote(cur); // zweiter Lauf ändert nichts
+    await addUnitNote(u.id, " Neu ");
+    cur = (await db.units.get(u.id))!;
+    expect(cur.notes?.map((n) => n.text)).toEqual(["Neu", "Alte Notiz"]);
+    const undo = await removeUnitNote(u.id, cur.notes![0].id);
+    expect((await db.units.get(u.id))!.notes).toHaveLength(1);
+    await undo();
+    expect((await db.units.get(u.id))!.notes).toHaveLength(2);
   });
 });
 

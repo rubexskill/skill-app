@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, UNIT_STATUSES, UNIT_STATUS_LABEL, type ClipMeta, type Part, type Skill, type UnitStatus } from "../db";
 import { dayLabel, elapsedLabel, minutesLabel, bigTime } from "../logic";
 import {
-  addClip, addLoop, addPartNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, LOOP_SPEEDS, movePart, missingClipIds, removeClip, removePartNote,
+  addClip, addLoop, addPartNote, addUnitNote, migrateUnitNote, removeUnitNote, clipStorage, createPart, createUnit, deletePart, deleteUnit, LOOP_SPEEDS, movePart, missingClipIds, removeClip, removePartNote,
   renameClip, setClipRange, sizeLabel, storageWarning, unitProgress, updatePart, updateUnit, type ClipStorage,
 } from "../units";
 import { AutoTextarea, CheckCircle, Fold, Group, NavButton, NavPage, Row, Segmented, Sheet, Switch, SwipeRow, useNow, useUI } from "../components/ui";
@@ -69,13 +69,16 @@ export function UnitsSection({ skill }: { skill: Skill }) {
             <span className="unit-main">
               <span className="unit-title">{u.title}</span>
               <span className="unit-meta">
-                <span className={`unit-status is-${u.status}`}>{UNIT_STATUS_LABEL[u.status]}</span>
+                <span className={`unit-status is-${u.status}`}><i className="unit-dot" />{UNIT_STATUS_LABEL[u.status]}</span>
                 <span>{minutesLabel(minutes.get(u.id) ?? 0)}</span>
+                {pr.total === 0 && <span>Noch keine Abschnitte</span>}
               </span>
             </span>
-            <Ring value={pr.total ? pr.solid / pr.total : 0} size={44} stroke={5} className="unit-ring">
-              <span className="unit-ring-num">{pr.total ? `${pr.solid}/${pr.total}` : "–"}</span>
-            </Ring>
+            {pr.total > 0 && (
+              <Ring value={pr.solid / pr.total} size={44} stroke={5} className="unit-ring">
+                <span className="unit-ring-num">{pr.solid}/{pr.total}</span>
+              </Ring>
+            )}
             <Icon name="chevron-right" size={14} className="unit-chev" />
           </button>
         );
@@ -103,11 +106,11 @@ export function UnitPage({ id }: { id: string }) {
   const [adding, setAdding] = useState(false);
   const [sorting, setSorting] = useState(false);
   const [title, setTitle] = useState("");
-  const [note, setNote] = useState("");
+  const [draft, setDraft] = useState("");
   const loaded = useRef<string | null>(null);
 
   useEffect(() => {
-    if (unit && loaded.current !== unit.id) { loaded.current = unit.id; setTitle(unit.title); setNote(unit.note); }
+    if (unit && loaded.current !== unit.id) { loaded.current = unit.id; setTitle(unit.title); void migrateUnitNote(unit); }
   }, [unit]);
   useEffect(() => { if (unit === undefined && loaded.current) pop(); }, [unit, pop]);
 
@@ -139,7 +142,7 @@ export function UnitPage({ id }: { id: string }) {
       sub={
         <div className="head-meta">
           <button className={`unit-status-btn is-${unit.status}`} onClick={statusMenu} aria-label={`Status: ${UNIT_STATUS_LABEL[unit.status]}`}>
-            {UNIT_STATUS_LABEL[unit.status]}<Icon name="chevron-down" size={12} />
+            <i className="unit-dot" />{UNIT_STATUS_LABEL[unit.status]}<Icon name="chevron-down" size={12} />
           </button>
           <span className="info-line">{skill.title}</span>
         </div>
@@ -157,14 +160,13 @@ export function UnitPage({ id }: { id: string }) {
             ) : (
               <>
                 <div className="hero-num">{t.big}<span className="hero-unit">{t.unit}</span></div>
-                <div className="hero-sub">{pr.total ? `${pr.solid} von ${pr.total} sitzen` : "noch keine Abschnitte"}</div>
               </>
             )}
           </Ring>
           <button className="hero-btn" onClick={() => void timer.toggle(skill, id)} aria-label={running ? "Stoppen und speichern" : "Timer starten"}>
             <Icon name={running ? "pause" : "play"} size={28} />
           </button>
-          <div className="hero-hint">{running ? "Pause speichert die Einheit" : `Einheit ${skill.sessionMinutes} min`}</div>
+          <div className="hero-hint">{running ? "Pause speichert die Einheit" : `Einheit ${skill.sessionMinutes} min${pr.total ? ` · ${pr.solid} von ${pr.total} sitzen` : ""}`}</div>
         </section>
 
         <section className="units">
@@ -201,12 +203,17 @@ export function UnitPage({ id }: { id: string }) {
           ))}
         </section>
 
-        <Fold title="Notiz" icon="note" summary={note.trim().split("\n")[0].slice(0, 40)}>
+        <Fold title="Notizen zum Stück" icon="note" summary={unit.notes?.length ? String(unit.notes.length) : ""}>
           <Group>
-            <div className="row input-row">
-              <AutoTextarea value={note} placeholder="Gedanken zum Stück, Noten, Tempo …" onChange={(e) => setNote(e.target.value)}
-                onBlur={() => note !== unit.note && void updateUnit(id, { note })} />
+            <div className="row input-row compose">
+              <AutoTextarea value={draft} placeholder="Gedanken zum Stück, Noten, Tempo …" onChange={(e) => setDraft(e.target.value)} />
+              {draft.trim() && <button className="inline-btn" onClick={() => { void addUnitNote(id, draft); setDraft(""); }}>Sichern</button>}
             </div>
+            {(unit.notes ?? []).map((n) => (
+              <SwipeRow key={n.id} actions={[{ label: "Löschen", tone: "danger", onClick: () => undoable("Notiz gelöscht", () => removeUnitNote(id, n.id)) }]}>
+                <Row title={<span className="note-text">{n.text}</span>} subtitle={dayLabel(n.at)} />
+              </SwipeRow>
+            ))}
           </Group>
         </Fold>
 
@@ -290,7 +297,7 @@ export function PartPage({ id }: { id: string }) {
 
   return (
     <NavPage title={part.name} back={back} eyebrow={<span className="eyebrow-cat cv" style={catVars(skill.kategorie)}>{unit.title}</span>}
-      sub={<div className="head-meta"><span className={`unit-status is-${part.solid ? "kann" : "lerne"}`}>{part.solid ? "sitzt" : "üben"}</span>{part.loops > 0 && <span className="info-line">{part.loops}× in der Schleife</span>}</div>}>
+      sub={<div className="head-meta"><span className={`unit-status is-${part.solid ? "kann" : "lerne"}`}><i className="unit-dot" />{part.solid ? "sitzt" : "üben"}</span>{part.loops > 0 && <span className="info-line">{part.loops}× in der Schleife</span>}</div>}>
       <div className="cv detail" style={catVars(skill.kategorie)}>
         <Group className="is-card">
           <div className="row input-row labeled">
