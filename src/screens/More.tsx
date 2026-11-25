@@ -1,9 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "../db";
-import { backupFileName, exportBackup, minutesLabel, readBackup, restoreBackup, shareFile } from "../logic";
+import { backupFileName, currentCounts, exportBackup, minutesLabel, readBackup, readBackupChecked, restoreBackup, shareFile } from "../logic";
+import { describeBackup } from "../backupfile";
+import { loadBackupState, markBackup, reminderText, requestPersistence, setRemind, storageInfo, storageLabel, type StorageInfo } from "../safety";
 import { TidyButton } from "./Tidy";
-import { CheckCircle, Group, NavPage, Row, Segmented, SwipeRow, useUI } from "../components/ui";
+import { CheckCircle, Group, NavPage, Row, Segmented, Switch, SwipeRow, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
 import { useNav } from "../nav";
@@ -21,7 +23,10 @@ const THEME_OPTS: { value: ThemeSetting; label: string }[] = [
 
 export function More() {
   const nav = useNav();
-  const { toast, actionSheet } = useUI();
+  const { toast, actionSheet, undoable } = useUI();
+  const [bstate, setBstate] = useState(() => loadBackupState());
+  const [sinfo, setSinfo] = useState<StorageInfo | null>(null);
+  useEffect(() => { void storageInfo().then(setSinfo); }, []);
   const [theme, setTheme] = useTheme();
   const fileRef = useRef<HTMLInputElement>(null);
   const clipsRef = useRef<HTMLInputElement>(null);
@@ -43,6 +48,7 @@ export function More() {
   const doExport = async () => {
     try {
       const r = await shareFile(await exportBackup(), backupFileName(), "Skills-Backup");
+      if (r !== "cancelled") { markBackup(); setBstate(loadBackupState()); }
       if (r === "downloaded") toast("Backup gespeichert");
     } catch {
       toast("Export fehlgeschlagen");
@@ -82,17 +88,29 @@ export function More() {
     e.target.value = "";
     if (!file) return;
     try {
-      const data = await readBackup(file);
-      const when = new Date(data.exportedAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+      // Erst prüfen und zusammenfassen, dann fragen; ersetzt wird erst nach der Bestätigung, und das Ersetzen lässt sich rückgängig machen.
+      const parsed = await readBackupChecked(file);
+      const data = parsed.data;
+      const message = describeBackup(data, await currentCounts(), parsed);
       actionSheet({
         title: "Backup laden?",
-        message: `Backup vom ${when} mit ${data.skills.length} Einträgen. Alle aktuellen Daten auf diesem Gerät werden ersetzt.`,
-        choices: [{ label: "Daten ersetzen", destructive: true, onSelect: () => void restoreBackup(data).then(() => toast("Backup geladen")) }],
+        message,
+        choices: [{
+          label: "Daten ersetzen", destructive: true,
+          onSelect: () => undoable("Backup geladen", async () => {
+            const before = await exportBackup(); // Sicherheitskopie im Speicher für „Rückgängig“
+            try { await restoreBackup(data); } catch { toast("Import fehlgeschlagen, deine Daten sind unverändert"); return async () => undefined; }
+            return async () => { await restoreBackup(await readBackup(new File([before], "vorher.json"))); };
+          }),
+        }],
       });
     } catch (err) {
       toast((err as Error).message || "Datei konnte nicht gelesen werden");
     }
   };
+
+  const reminder = reminderText(bstate, Date.now(), (stats?.skills ?? 0) + (stats?.todos ?? 0) > 0);
+  const slabel = sinfo ? storageLabel(sinfo) : null;
 
   return (
     <NavPage title="Mehr">
@@ -133,8 +151,15 @@ export function More() {
       </Group>
 
       <Group header="Backup" footer="Deine Daten liegen nur auf diesem Gerät. Exportiere regelmäßig ein Backup, z. B. in die Dateien-App. Ein Backup-Import ersetzt alle Daten – zum Zusammenführen nimm „Abgleichen“.">
+        {reminder && <Row title={reminder} subtitle="Jetzt sichern" tone="accent" onClick={() => void doExport()} />}
         <Row title="Backup exportieren" onClick={() => void doExport()} chevron leading={<span className="icon-tile tile-gray"><Icon name="share" size={17} /></span>} />
         <Row title="Backup importieren" onClick={() => fileRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />
+        <Row title="Erinnerung nach 14 Tagen" trailing={<Switch checked={bstate.remind} onChange={(v) => { setRemind(v); setBstate(loadBackupState()); }} label="Backup-Erinnerung" />} />
+      </Group>
+      <Group header="Speicher" footer={slabel?.text}>
+        <Row title="Speicherschutz" detail={sinfo ? (sinfo.persisted ? "Geschützt" : sinfo.supported ? "Nicht geschützt" : "Nicht möglich") : "…"} />
+        {sinfo?.usage != null && <Row title="Belegt" detail={sizeLabel(sinfo.usage)} />}
+        {sinfo?.supported && !sinfo.persisted && <Row title="Schutz anfordern" tone="accent" onClick={() => void requestPersistence().then(async (ok) => { setSinfo(await storageInfo()); toast(ok ? "Der Speicher ist jetzt geschützt" : "Der Browser hat den Schutz nicht erteilt. Mach regelmäßig Backups."); })} />}
       </Group>
       <Group header="Clips" footer={clips ? `${clips.count} ${clips.count === 1 ? "Clip" : "Clips"}, ${sizeLabel(clips.clipBytes)}. Clips sind nicht im Backup und werden nicht zwischen Geräten abgeglichen. Der Export legt die Videos als einzelne Dateien ab; der Import ordnet sie über den Dateinamen wieder zu.` : undefined}>
         <Row title="Clips exportieren" onClick={() => void exportClips()} chevron leading={<span className="icon-tile tile-gray"><Icon name="video" size={17} /></span>} />

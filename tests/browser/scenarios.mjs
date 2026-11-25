@@ -378,6 +378,42 @@ for (const eng of engines) {
     const after = await snapshot(page);
     expect(after === before, "Nach dem Import sind die Daten nicht identisch (" + (after.length - before.length) + " Zeichen Unterschied)");
   });
+  await step("Backup-Härtefälle: kaputte Datei, Zusammenfassung, Rückgängig, Speicher, Erinnerung", async () => {
+    await tabTap(page, "Mehr");
+    const input = page.locator('input[type=file][accept*="json"]').first();
+    const count = () => db(async () => [await window.db.skills.count(), await window.db.todos.count()].join("/"));
+    const good = await count();
+    // kaputte, leere, falsche Datei: verständliche Meldung, nichts ändert sich
+    for (const [name, content, msg] of [["kaputt.json", '{"format":"skill-app-backup","skills":[{"id":"x"', /beschädigt/], ["leer.json", "", /leer/], ["fremd.json", '{"a":1}', /keine Backup-Datei/]]) {
+      const f = path.join(resultsDir, `${tag}-${name}`); fs.writeFileSync(f, content);
+      await input.setInputFiles(f);
+      await page.waitForFunction((r) => new RegExp(r).test(document.body.textContent ?? ""), msg.source, { timeout: 6000 }).catch(() => {});
+      expect(msg.test(await page.evaluate(() => document.body.textContent)), `${name}: keine verständliche Meldung`);
+      expect(await count() === good, `${name}: Daten haben sich geändert`);
+      await sleep(4300); // Hinweis verschwindet
+    }
+    // gültige Datei: Zusammenfassung, dann ersetzen, dann Rückgängig
+    const text = await db(async () => await (await window.app.logic.exportBackup()).text());
+    const f = path.join(resultsDir, `${tag}-gut.json`);
+    const data = JSON.parse(text); data.todos = data.todos.slice(0, Math.max(0, data.todos.length - 1)); fs.writeFileSync(f, JSON.stringify(data));
+    await input.setInputFiles(f);
+    await page.waitForSelector(".as-layer.is-shown", { timeout: 6000 });
+    const sheet = await page.locator(".as-layer.is-shown").first().textContent();
+    expect(/Backup vom/.test(sheet) && /Auf diesem Gerät sind jetzt/.test(sheet), "Zusammenfassung vor dem Überschreiben fehlt");
+    await tap(page, asBtn("Daten ersetzen"), 1200);
+    expect(await count() !== good, "Import hat nichts ersetzt");
+    await tap(page, V(".toast-action").first(), 1500);
+    expect(await count() === good, "Rückgängig stellt den alten Stand nicht her");
+    // Speicher und Erinnerung
+    expect(await V(".row").filter({ hasText: "Speicherschutz" }).count() === 1, "Zeile „Speicherschutz“ fehlt");
+    await db(() => localStorage.setItem("backup.last", String(Date.now() - 20 * 86400000)));
+    await page.reload();
+    await page.waitForFunction(() => window.db && window.app && window.__toast, null, { timeout: 15000 });
+    await tabTap(page, "Mehr");
+    expect(/Seit 20 Tagen kein Backup/.test(await V(".row").filter({ hasText: "kein Backup" }).first().textContent()), "Erinnerung „Seit 20 Tagen kein Backup“ fehlt");
+    await tap(page, V(".row").filter({ hasText: "Erinnerung nach 14 Tagen" }).locator("[role=switch], button, input").first(), 500);
+    expect(await V(".row").filter({ hasText: "kein Backup" }).count() === 0, "Erinnerung lässt sich nicht abschalten");
+  });
   await check("Ende");
 
   await context.close();

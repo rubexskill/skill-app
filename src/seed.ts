@@ -49,7 +49,8 @@ function profileFor(title: string): { profile: Profile; milestones: Milestone[];
 }
 
 /** Ergänzt fehlende Felder (Migration, Backup-Import, neue Einträge). Vorhandene Werte bleiben. */
-export function withDefaults(s: Partial<Skill>): Skill {
+/** `legacy`: Auffüllen für alte Datenbankversionen (vor Version 6): Unterpunkte werden dort noch nicht eingeschaltet, das erledigt später die Migration samt Verschieben der Sessions. */
+export function withDefaults(s: Partial<Skill>, legacy = false): Skill {
   const m = META.get(norm(s.name ?? ""));
   const pf = s.profile === undefined ? profileFor(m?.title ?? s.title ?? "") : null;
   return {
@@ -75,7 +76,7 @@ export function withDefaults(s: Partial<Skill>): Skill {
     profile: s.profile !== undefined ? s.profile : pf?.profile ?? null,
     metric: s.metric !== undefined ? s.metric : pf?.metric ?? null,
     test: s.test ?? null,
-    useUnits: s.useUnits ?? (s.title ?? m?.title ?? s.name) === UNITS_DEFAULT_TITLE ? true : s.useUnits,
+    useUnits: legacy ? s.useUnits : s.useUnits ?? (s.title ?? m?.title ?? s.name) === UNITS_DEFAULT_TITLE ? true : s.useUnits,
     ...(s.unsorted ? { unsorted: true } : {}),
     upd: s.upd,
   };

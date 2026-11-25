@@ -397,7 +397,7 @@ export class SkillDB extends Dexie {
       })
       .upgrade(async (tx) => {
         await tx.table("skills").toCollection().modify((s: Partial<Skill>) => {
-          Object.assign(s, withDefaults(s));
+          Object.assign(s, withDefaults(s, true));
         });
         await tx.table("lists").bulkAdd(defaultLists());
       });
@@ -407,7 +407,7 @@ export class SkillDB extends Dexie {
       .stores({ records: "id, skillId, at" })
       .upgrade(async (tx) => {
         await tx.table("skills").toCollection().modify((s: Partial<Skill>) => {
-          Object.assign(s, withDefaults(s));
+          Object.assign(s, withDefaults(s, true));
         });
       });
 
@@ -421,7 +421,7 @@ export class SkillDB extends Dexie {
       })
       .upgrade(async (tx) => {
         await tx.table("skills").toCollection().modify((s: Partial<Skill>) => {
-          Object.assign(s, withDefaults(s));
+          Object.assign(s, withDefaults(s, true));
         });
         for (const name of ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records"]) {
           await tx.table(name).toCollection().modify((r: Record<string, number | undefined>) => {

@@ -1,3 +1,4 @@
+import { BACKUP_FORMAT, BACKUP_TABLES, BACKUP_VERSION, MAX_BACKUP_BYTES, parseBackupText, type Backup, type ParsedBackup } from "./backupfile";
 import { db, uid, withoutHooks, type LinkItem, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ, type Unit } from "./db";
 import { defaultLists, withDefaults } from "./seed";
 
@@ -396,12 +397,11 @@ export function findSimilar(name: string, skills: Skill[], limit = 4): Skill[] {
 
 // ---------------- Backup ----------------
 
-const BACKUP_FORMAT = "skill-app-backup";
 
 export async function exportBackup(): Promise<Blob> {
   const data = {
     format: BACKUP_FORMAT,
-    version: 5,
+    version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     skills: await db.skills.toArray(),
     sessions: await db.sessions.toArray(),
@@ -452,32 +452,27 @@ export function backupFileName(): string {
   return `skills-backup-${dayKey(new Date())}.json`;
 }
 
-type Backup = {
-  skills: Partial<Skill>[];
-  sessions?: Session[];
-  inbox?: unknown[];
-  checks?: unknown[];
-  apps?: unknown[];
-  todos?: unknown[];
-  lists?: unknown[];
-  records?: unknown[];
-  terms?: unknown[];
-  wishes?: unknown[];
-  cards?: unknown[];
-  units?: unknown[];
-  parts?: unknown[];
-  recordings?: unknown[];
-  flagStats?: unknown[];
-  cubeTimes?: unknown[];
-  cubeProgress?: unknown[];
-  tombs?: unknown[];
-  exportedAt: string;
-};
+export type { Backup };
+
+/** Liest und prüft eine Backup-Datei; wirft verständliche Fehler (nichts wird verändert). */
+export async function readBackupChecked(file: File): Promise<Extract<ParsedBackup, { ok: true }>> {
+  if (file.size > MAX_BACKUP_BYTES) { const r = parseBackupText("x", file.size); throw new Error(r.ok ? "Die Datei ist zu groß." : r.message); }
+  let text: string;
+  try { text = await file.text(); } catch { throw new Error("Die Datei konnte nicht gelesen werden."); }
+  const r = parseBackupText(text, file.size);
+  if (!r.ok) throw new Error(r.message);
+  return r;
+}
 
 export async function readBackup(file: File): Promise<Backup> {
-  const data = JSON.parse(await file.text());
-  if (data?.format !== BACKUP_FORMAT || !Array.isArray(data.skills)) throw new Error("Das ist keine Backup-Datei dieser App.");
-  return data as Backup;
+  return (await readBackupChecked(file)).data;
+}
+
+/** Anzahl je Tabelle auf diesem Gerät (für die Zusammenfassung vor dem Überschreiben) */
+export async function currentCounts() {
+  const rows = {} as Record<(typeof BACKUP_TABLES)[number], number>;
+  for (const k of BACKUP_TABLES) rows[k] = await (db as unknown as Record<string, { count(): Promise<number> }>)[k].count();
+  return rows;
 }
 
 /** Ersetzt alle Daten. Backups aus Version 1 werden um die neuen Felder ergänzt. */

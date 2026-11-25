@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import { applyTheme } from "./theme";
 import { ensureFlagSkill } from "./trainer/flags/store";
+import { requestPersistence } from "./safety";
 import { ensureCubeSkill } from "./trainer/cube/store";
 
 applyTheme();
@@ -15,7 +16,7 @@ if (location.pathname.endsWith("/design-vorschau")) location.replace(`${location
 document.addEventListener("touchstart", () => {}, { passive: true });
 
 // Bittet den Browser, die Daten nicht automatisch zu löschen.
-void navigator.storage?.persist?.();
+void requestPersistence();
 
 void ensureFlagSkill().then(() => ensureCubeSkill()).catch(() => undefined);
 
