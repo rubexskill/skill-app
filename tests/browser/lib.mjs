@@ -81,7 +81,9 @@ export async function openApp(dist, { browser, engine }, { width = 390, height =
   const errors = [];
   const benign = /Service Worker|favicon|apple-touch-icon|Failed to load resource|NotFoundError|NotAllowedError|Permission denied|getUserMedia/i;
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !benign.test(m.text())) errors.push(`console: ${m.text()}`); });
+  // Fehler UND Warnungen zählen (außer bekannten Test-Umgebungs-Meldungen: Software-Rendering meldet GPU-Hinweise)
+  const benignWarn = /GPU stall|ReadPixels|software|swiftshader|Automatic fallback|WebGL.*(deprecated|performance)/i;
+  page.on("console", (m) => { const t = m.type(); if ((t === "error" && !benign.test(m.text())) || (t === "warning" && !benign.test(m.text()) && !benignWarn.test(m.text()))) errors.push(`console: ${m.text()}`); });
   await page.goto("https://skills.test/");
   await page.waitForFunction(() => window.db && window.app && window.__toast, null, { timeout: 20000 });
   await sleep(300);

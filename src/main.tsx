@@ -6,8 +6,13 @@ import { applyTheme } from "./theme";
 import { ensureFlagSkill } from "./trainer/flags/store";
 import { requestPersistence } from "./safety";
 import { ensureCubeSkill } from "./trainer/cube/store";
+import { db } from "./db";
+import { Boundary, StartupError } from "./components/ErrorScreen";
+import { startUpdates } from "./update";
+import { initKeyboard } from "./keyboard";
 
 applyTheme();
+initKeyboard();
 
 // /design-vorschau ohne Schrägstrich → zur Vorschau-Seite
 if (location.pathname.endsWith("/design-vorschau")) location.replace(`${location.pathname}/${location.search}`);
@@ -18,12 +23,15 @@ document.addEventListener("touchstart", () => {}, { passive: true });
 // Bittet den Browser, die Daten nicht automatisch zu löschen.
 void requestPersistence();
 
-void ensureFlagSkill().then(() => ensureCubeSkill()).catch(() => undefined);
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+const root = createRoot(document.getElementById("root")!);
+// Erst die Datenbank öffnen: scheitert das (privater Modus, Speicher gesperrt), gibt es eine ruhige Fehlerseite statt einer leeren.
+db.open().then(
+  () => {
+    void ensureFlagSkill().then(() => ensureCubeSkill()).catch(() => undefined);
+    root.render(<StrictMode><Boundary><App /></Boundary></StrictMode>);
+    startUpdates();
+  },
+  (error) => root.render(<StartupError error={error} />),
 );
 
 // Nur im Entwicklungsmodus oder in Test-Builds (VITE_EXPOSE=1): Datenbank und Logik für automatisierte Tests erreichbar machen.

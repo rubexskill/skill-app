@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, STATUSES, STATUS_LABEL, TYPES, TYP_LABEL, type Skill, type Status, type Typ } from "../db";
 import { normalize } from "../logic";
-import { EmptyState, Group, NavButton, NavPage, Row, SearchField, Sheet, useNow } from "../components/ui";
+import { EmptyState, Group, NavButton, NavPage, Row, SearchField, Sheet, useCaps, useNow } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useStack } from "../components/Stack";
 import { CategoryIcon, catVars, shortCategory } from "../categories";
@@ -27,6 +27,7 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
   const [newOpen, setNewOpen] = useState(false);
   const [onlyUnsorted, setOnlyUnsorted] = useState(false);
   const now = useNow(!!skills?.some((s) => s.timerStart));
+  const caps = useCaps(100);
 
   const filtered = useMemo(() => {
     const q = normalize(query);
@@ -106,7 +107,8 @@ export function SkillList({ category, isRoot }: { category: string; isRoot?: boo
           header={all
             ? <span className="section-head cv" style={catVars(key)}><CategoryIcon name={key} size={15} />{key}<span className="section-count">{items.length}</span></span>
             : <span className={`section-head status-${key}`}><Icon name={`st-${key === "lerne" ? "active" : key === "idee" ? "later" : key === "kann" ? "done" : "clarify"}`} size={15} />{STATUS_LABEL[key as Status]}<span className="section-count">{items.length}</span></span>}>
-          {items.map((s) => <SkillRow key={s.id} skill={s} total={totals?.get(s.id) ?? 0} now={now} showCategory={all && !!query.trim()} />)}
+          {caps.view(String(key), items).map((s) => <SkillRow key={s.id} skill={s} total={totals?.get(s.id) ?? 0} now={now} showCategory={all && !!query.trim()} />)}
+          {caps.more(String(key), items.length)}
         </Group>
       ))}
 

@@ -1,3 +1,4 @@
+import { UpdateNotice } from "./update";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
@@ -306,6 +307,7 @@ export default function App() {
       <TimerProvider>
         <QuickCapture />
         <Shell />
+        <UpdateNotice />
       </TimerProvider>
     </UIProvider>
   );

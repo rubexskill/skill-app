@@ -166,6 +166,18 @@ for (const eng of engines) {
       expect(await V(".rec-detail").count() > 0 || await V(".rec-stop").count() > 0, "Weder Aufnahme noch lesbare Fehlermeldung");
     }
   }, { skip: !blobs ? "Blobs nicht speicherbar" : undefined });
+  await step("Aufnahme wird gesichert, wenn die App in den Hintergrund geht", async () => {
+    const before = await db(() => window.db.recordings.count());
+    await tap(page, V(".row").filter({ hasText: "Aufnahme starten" }).first(), 1500);
+    expect(await V(".rec-stop").count() === 1, "Aufnahme startet nicht");
+    await sleep(1000);
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange")); });
+    await page.waitForFunction((n) => window.db.recordings.count().then((c) => c === n + 1), before, { timeout: 8000 }).catch(() => {});
+    await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event("visibilitychange")); });
+    expect(await db(() => window.db.recordings.count()) === before + 1, "Aufnahme ging beim Verlassen der App verloren");
+    expect(await V(".rec-stop").count() === 0, "Aufnahme läuft nach dem Verlassen weiter");
+    await db(async () => { const last = (await window.db.recordings.orderBy("at").last()); if (last) { await window.db.recordings.delete(last.id); await window.db.recBlobs.delete(last.id); } });
+  }, { skip: eng.name !== "chromium" || !blobs ? "nur mit Fake-Mikrofon und Blobs (Chromium)" : undefined });
   await step("Aufnahme umbenennen und löschen", async () => {
     await tap(page, V(".row").filter({ hasText: "Aufnahme 1" }).first());
     await V(".sheet-layer.is-shown input").first().fill("Refrain");
@@ -357,6 +369,19 @@ for (const eng of engines) {
   });
 
   // ---------- Backup und Wiederherstellung ----------
+  await step("Tastatur: ein Eingabefeld unten auf der Seite bleibt über der Tastatur sichtbar", async () => {
+    await tabTap(page, "Übersicht");
+    await tap(page, V(".row, .acard").filter({ hasText: "Spanisch lernen" }).first(), 900);
+    const ta = V(".fold-body textarea").first();
+    if (!(await ta.count())) await tap(page, fold("Notizen"), 500);
+    // iOS: die Tastatur nimmt unten 336 px weg (visualViewport); hier wird die Höhe gesetzt und das Feld fokussiert
+    await page.evaluate(() => { document.documentElement.style.setProperty("--kb", "336px"); const t = [...document.querySelectorAll(".fold-body textarea")].find((e) => e.getBoundingClientRect().width > 0); t?.focus(); });
+    await sleep(900);
+    const box = await V(".fold-body textarea").first().boundingBox();
+    const vh = await page.evaluate(() => innerHeight);
+    expect(box && box.y + box.height <= vh - 336 + 2 && box.y >= 0, `Eingabefeld liegt unter der Tastatur (unten ${box && Math.round(box.y + box.height)} von ${vh - 336})`);
+    await page.evaluate(() => { document.documentElement.style.removeProperty("--kb"); document.activeElement?.blur(); });
+  });
   await step("Backup exportieren, Daten löschen, importieren – identisch", async () => {
     await tabTap(page, "Mehr");
     const before = await snapshot(page);

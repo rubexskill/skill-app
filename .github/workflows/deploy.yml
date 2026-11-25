@@ -117,7 +117,7 @@ jobs:
         env:
           CI: "true"
           ENGINES: chromium
-          SUITES: scenarios,matrix
+          SUITES: scenarios,states,offline,perf,matrix
           QUICK: "1"
           SUITE_TIMEOUT_MIN: "5"
       - name: Ergebnisse bei Fehlern speichern

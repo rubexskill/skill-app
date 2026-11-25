@@ -7,7 +7,7 @@ import { catVars } from "../categories";
 import { Ring } from "./parts";
 import { groupAll, originLabel, searchTodos, splitHits, subjectOf as subjectParts } from "../todoview";
 import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
-import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useFrozen, useUI } from "../components/ui";
+import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useCaps, useFrozen, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 /** Abhaken mit kurzer Animation, erst danach wandert die Zeile nach „Erledigt“. */
@@ -51,6 +51,7 @@ const BUCKETS: { key: TodoBucket; title: string }[] = [
 
 export function Todos() {
   const { undoable } = useUI();
+  const caps = useCaps(80);
   const lists = useLiveQuery(() => db.lists.orderBy("order").toArray(), []);
   const liveTodos = useLiveQuery(() => db.todos.toArray(), []);
   const [todos, gesture] = useFrozen(liveTodos);
@@ -160,7 +161,8 @@ export function Todos() {
           ? subjects.map((sub) => (
               <Fragment key={sub || "_"}>
                 <div className="todo-sub is-subject">{sub || "Ohne Fach"}</div>
-                {open.filter((t) => subjectOf(t).subject === sub).map((t) => row(t, subjectOf(t).text))}
+                {caps.view(`${l.id}/${sub}`, open.filter((t) => subjectOf(t).subject === sub)).map((t) => row(t, subjectOf(t).text))}
+                {caps.more(`${l.id}/${sub}`, open.filter((t) => subjectOf(t).subject === sub).length)}
               </Fragment>
             ))
           : BUCKETS.map((b) => {
@@ -168,7 +170,8 @@ export function Todos() {
               return items.length ? (
                 <Fragment key={b.key}>
                   {(open.length > 4 || b.key === "overdue") && <div className={`todo-sub${b.key === "overdue" ? " is-overdue" : ""}`}>{b.title}</div>}
-                  {items.map((t) => row(t))}
+                  {caps.view(`${l.id}/${b.key}`, items).map((t) => row(t))}
+                  {caps.more(`${l.id}/${b.key}`, items.length)}
                 </Fragment>
               ) : null;
             })}
@@ -194,7 +197,8 @@ export function Todos() {
           return (
             <Fragment key={g.key}>
               <div className={`todo-sub${g.key === "overdue" ? " is-overdue" : ""}`}>{g.title}{stamp && <span className="todo-sub-date">{stamp}</span>}</div>
-              {g.items.map((t) => row(t, subjectOf(t).subject && normalize(listName(t.listId)) === "schule" ? subjectOf(t).text : t.text, { origin: true, hideDue: g.key === "today" || g.key === "tomorrow" || g.key === "none" }))}
+              {caps.view(`all/${g.key}`, g.items).map((t) => row(t, subjectOf(t).subject && normalize(listName(t.listId)) === "schule" ? subjectOf(t).text : t.text, { origin: true, hideDue: g.key === "today" || g.key === "tomorrow" || g.key === "none" }))}
+              {caps.more(`all/${g.key}`, g.items.length)}
             </Fragment>
           );
         })}
@@ -209,7 +213,8 @@ export function Todos() {
       <div className="search-empty">Nichts gefunden für „{query.trim()}“.</div>
     ) : (
       <Group className="is-card todo-card" footer={`${results.length === 1 ? "1 Treffer" : `${results.length} Treffer`} in allen Listen`}>
-        {results.map((t) => row(t, t.text, { origin: true }))}
+        {caps.view("search", results).map((t) => row(t, t.text, { origin: true }))}
+        {caps.more("search", results.length)}
       </Group>
     );
 

@@ -806,3 +806,16 @@ export function UIProvider({ children }: { children: ReactNode }) {
     </UIContext.Provider>
   );
 }
+
+/** Lange Listen schrittweise zeigen: die ersten `step` Zeilen, dann „Weitere anzeigen“. Hält Seiten mit Hunderten Einträgen flüssig. */
+export function useCaps(step = 80) {
+  const [caps, setCaps] = useState<Record<string, number>>({});
+  const limit = (key: string) => caps[key] ?? step;
+  const view = <T,>(key: string, items: T[]): T[] => (items.length > limit(key) ? items.slice(0, limit(key)) : items);
+  const more = (key: string, total: number) => {
+    const rest = total - limit(key);
+    if (rest <= 0) return null;
+    return <button key={`${key}-more`} className="more-rows" onClick={() => setCaps((c) => ({ ...c, [key]: limit(key) + step * 2 }))}>Weitere {Math.min(rest, step * 2)} anzeigen<span>{rest} übrig</span></button>;
+  };
+  return { view, more };
+}

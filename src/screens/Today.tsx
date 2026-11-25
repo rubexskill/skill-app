@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Skill } from "../db";
 import { addDays, dayKey, dueLabel, isActiveHabit, isActiveSkill, longDate, minutesLabel, setTodoDone, startOfDay, toggleCheck } from "../logic";
-import { CheckCircle, EmptyState, Group, NavPage, Row, SwipeRow, useFrozen, useUI } from "../components/ui";
+import { CheckCircle, EmptyState, Group, NavPage, Row, SwipeRow, useCaps, useFrozen, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { CategoryIcon, catVars } from "../categories";
 import { useNav } from "../nav";
@@ -15,6 +15,7 @@ import { endOfToday } from "../srs";
 export function Today() {
   const nav = useNav();
   const { undoable } = useUI();
+  const caps = useCaps(60);
   const today = dayKey(new Date());
   const dayStart = startOfDay(new Date()).getTime();
   const skills = useLiveQuery(() => db.skills.where("status").equals("lerne").sortBy("createdAt"), []);
@@ -97,7 +98,7 @@ export function Today() {
 
           {practice.length > 0 && (
             <Group className="is-card" header="Üben">
-              {practice.map((s) => {
+              {caps.view("practice", practice).map((s) => {
                 const m = minutesToday.get(s.id) ?? 0;
                 return (
                   <Row key={s.id} className="cv" style={catVars(s.kategorie)} title={s.title} muted={isDone(s)}
@@ -107,6 +108,7 @@ export function Today() {
                     onClick={() => nav.push({ type: "skill", id: s.id })} />
                 );
               })}
+              {caps.more("practice", practice.length)}
             </Group>
           )}
 

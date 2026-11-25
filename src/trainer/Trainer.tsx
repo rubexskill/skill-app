@@ -12,6 +12,7 @@ import { FlagsTrainer } from "./flags/FlagsTrainer";
 // Der Würfel-Trainer (mit three.js) wird erst beim Öffnen geladen.
 const CubeTrainer = lazy(() => import("./cube/CubeTrainer"));
 import type { TrainerResult } from "./shared";
+import { Boundary } from "../components/ErrorScreen";
 
 export type TrainerKind = "math" | "weekday" | "morse" | "flags" | "cube" | "breath" | "stopwatch" | "cards";
 
@@ -95,7 +96,7 @@ export function TrainerSheet({ open, onClose, skill, initial }: { open: boolean;
         {kind === "weekday" && <WeekdayTrainer {...props} />}
         {kind === "morse" && <MorseTrainer {...props} />}
         {kind === "flags" && <FlagsTrainer {...props} />}
-        {kind === "cube" && <Suspense fallback={<div className="cube-loading">Würfel wird geladen …</div>}><CubeTrainer {...props} /></Suspense>}
+        {kind === "cube" && <Boundary inline><Suspense fallback={<div className="cube-loading">Würfel wird geladen …</div>}><CubeTrainer {...props} /></Suspense></Boundary>}
         {kind === "breath" && <BreathTrainer {...props} />}
         {kind === "stopwatch" && <StopwatchTrainer {...props} />}
         {kind === "cards" && <CardsReview {...props} />}

@@ -119,7 +119,29 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
     const t = window.setInterval(() => setElapsed((performance.now() - t0) / 1000), 250);
     return () => window.clearInterval(t);
   }, [active]);
-  useEffect(() => () => { active?.cancel(); stopPlayback(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Läuft eine Aufnahme und die App verschwindet (Home-Taste, Sperren, Seite verlassen), wird das bisher Aufgenommene gesichert statt verworfen.
+  const activeRef = useRef<ActiveRecording | null>(null);
+  activeRef.current = active;
+  const keep = async (a: ActiveRecording) => {
+    try {
+      const { blob, duration, mime } = await a.stop();
+      if (blob.size) await addRecording({ unitId, partId, blob, duration, mime });
+    } catch { /* nichts zu sichern */ }
+  };
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
+  useEffect(() => {
+    const onHide = () => {
+      const a = activeRef.current;
+      if (!document.hidden || !a) return;
+      activeRef.current = null;
+      setActive(null);
+      void keepRef.current(a).then(() => toast("Aufnahme beim Verlassen der App gesichert."));
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { const a = activeRef.current; if (a) void keepRef.current(a); stopPlayback(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopPlayback = () => {
     audio.current?.pause();
