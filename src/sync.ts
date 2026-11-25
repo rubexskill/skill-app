@@ -196,6 +196,7 @@ const LABEL: Record<SyncTable, [string, string]> = {
   units: ["Unterpunkt", "Unterpunkte"],
   parts: ["Abschnitt", "Abschnitte"],
   recordings: ["Aufnahme", "Aufnahmen"],
+  flagStats: ["Flaggen-Lernstand", "Flaggen-Lernstände"],
 };
 
 /** „3 Sessions, 1 To-do“ */

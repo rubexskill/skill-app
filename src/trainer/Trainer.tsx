@@ -7,10 +7,11 @@ import { Group, Row, Sheet, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { allCategoryColors, categoryStyle } from "../categories";
 import { BreathTrainer, CardsReview, StopwatchTrainer } from "./Body";
-import { GeoTrainer, MathTrainer, MorseTrainer, WeekdayTrainer } from "./Quiz";
+import { MathTrainer, MorseTrainer, WeekdayTrainer } from "./Quiz";
+import { FlagsTrainer } from "./flags/FlagsTrainer";
 import type { TrainerResult } from "./shared";
 
-export type TrainerKind = "math" | "weekday" | "morse" | "geo" | "breath" | "stopwatch" | "cards";
+export type TrainerKind = "math" | "weekday" | "morse" | "flags" | "breath" | "stopwatch" | "cards";
 
 export interface TrainerOption {
   kind: TrainerKind;
@@ -27,7 +28,7 @@ export function builtInTrainer(skill: Pick<Skill, "title" | "metric">): TrainerO
   if (MATH.includes(t)) return { kind: "math", label: "Kopfrechnen", hint: "Zufallsaufgaben mit Zeit" };
   if (t === "Wochentag berechnen") return { kind: "weekday", label: "Wochentag-Training", hint: "Zufallsdaten, Wochentag antippen" };
   if (t === "Morsecode") return { kind: "morse", label: "Morse-Training", hint: "Zeichen und Wörter sehen oder hören" };
-  if (t === "Flaggen & Geografie") return { kind: "geo", label: "Länder-Quiz", hint: "Flaggen und Hauptstädte" };
+  if (t === "Flaggen & Geografie") return { kind: "flags", label: "Flaggen-Trainer", hint: "195 Flaggen, Hauptstädte, Lernstand" };
   if (BREATH.includes(t)) return { kind: "breath", label: "Atemübung", hint: "Ruhiger Kreis mit Phasen" };
   if (skill.metric?.unit.trim() === "s") return { kind: "stopwatch", label: "Stoppuhr", hint: "Mit Bestzeit als Rekord" };
   return null;
@@ -90,7 +91,7 @@ export function TrainerSheet({ open, onClose, skill, initial }: { open: boolean;
         {kind === "math" && <MathTrainer {...props} />}
         {kind === "weekday" && <WeekdayTrainer {...props} />}
         {kind === "morse" && <MorseTrainer {...props} />}
-        {kind === "geo" && <GeoTrainer {...props} />}
+        {kind === "flags" && <FlagsTrainer {...props} />}
         {kind === "breath" && <BreathTrainer {...props} />}
         {kind === "stopwatch" && <StopwatchTrainer {...props} />}
         {kind === "cards" && <CardsReview {...props} />}

@@ -2,6 +2,7 @@ import Dexie, { type EntityTable, type Table } from "dexie";
 import { buildSeed, defaultLists, withDefaults } from "./seed";
 import { backfillUnsorted } from "./backfill";
 import { moveToFirstUnit } from "./unitsMigrate";
+import type { Stat as FlagStat } from "./trainer/flags/logic";
 
 // Interne Schlüssel bleiben wie in Version 1 (Backups bleiben kompatibel), die Anzeige ist neu.
 export type Status = "rausfinden" | "idee" | "lerne" | "kann";
@@ -336,7 +337,7 @@ export interface ClipBlob {
   blob: Blob;
 }
 
-export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings"] as const;
+export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats"] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 let hooksOff = false;
@@ -365,6 +366,8 @@ export class SkillDB extends Dexie {
   units!: EntityTable<Unit, "id">;
   parts!: EntityTable<Part, "id">;
   recordings!: EntityTable<Recording, "id">;
+  /** Lernstand des Flaggen-Trainers (id = ISO-Code); gehört ins Backup und in den Abgleich */
+  flagStats!: EntityTable<FlagStat, "id">;
   recBlobs!: EntityTable<ClipBlob, "id">;
   covers!: EntityTable<ClipBlob, "id">;
   clipBlobs!: EntityTable<ClipBlob, "id">;
@@ -452,6 +455,9 @@ export class SkillDB extends Dexie {
 
     // Version 9: Aufnahmen mit Standardnamen („Aufnahme 24.11. 21:36“) heißen fortlaufend „Aufnahme 1“, „Aufnahme 2“ …
     this.version(9).stores({}).upgrade((tx) => renameDefaultRecordings(tx.table("recordings")));
+
+    // Version 10: Lernstand des Flaggen-Trainers (neue Tabelle, vorhandene Daten bleiben unberührt).
+    this.version(10).stores({ flagStats: "id" });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
     for (const name of SYNC_TABLES) {

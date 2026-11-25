@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Group, Segmented } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { CAPITAL_AMBIGUOUS, COUNTRIES, flagOf, MORSE_ALL, MORSE_EASY, MORSE_LETTERS, MORSE_WORDS, MORSE_WORDS_EASY, type Country } from "./data";
+import { MORSE_ALL, MORSE_EASY, MORSE_LETTERS, MORSE_WORDS, MORSE_WORDS_EASY } from "./data";
 import { DAY_NAMES, doomsdaySteps, weekdayOf } from "./doomsday";
 import { KOCH_ORDER, KOCH_PASS, MORSE, groupCredit, kochGroups, loadPrefs, morseOf, savePrefs } from "./morse";
 import { playMorseText, prepareAudio, releaseAudio } from "./audio";
-import { AudioCheck, de1, pick, r, round1, Round, Setup, shuffle, useAudioState, type HowTo, type RoundStat, type TrainerProps, type TrainerResult } from "./shared";
+import { AudioCheck, pick, r, round1, Round, Setup, shuffle, useAudioState, type HowTo, type RoundStat, type TrainerProps, type TrainerResult } from "./shared";
 
 const timeRecord = (s: RoundStat): TrainerResult["record"] =>
   s.right / s.total >= 0.8 ? { value: round1(s.totalMs / 1000 / s.total), label: "Zeit pro Aufgabe", unit: "s", higher: false } : undefined;
@@ -339,66 +339,6 @@ export function MorseTrainer({ onFinish }: TrainerProps) {
         elapsedMs: s.totalMs,
         headline: koch ? `Koch-Kurs: ${Math.round((100 * s.credit) / s.total)} % der ${chars} Zeichen richtig` : `${s.right} von ${s.total} richtig`,
         record: koch ? undefined : { value: Math.round((100 * s.right) / s.total), label: "Trefferquote", unit: "%", higher: true },
-      })} />
-  );
-}
-
-// ---------------- Flaggen & Geografie ----------------
-
-interface GeoTask { kind: "flag" | "capital"; country: Country; options: string[]; answer: string }
-
-const GEO_HOW: HowTo = {
-  points: [
-    "10 Zufallsfragen mit vier Antworten. Falsche Antworten stammen meist aus derselben Weltregion, damit Raten nicht reicht.",
-    "Länder mit mehreren oder umstrittenen Hauptstädten (Bolivien, Südafrika, Israel, Elfenbeinküste) werden bei Hauptstadt-Fragen nicht abgefragt.",
-    "Nach der Runde kannst du alle Fehler direkt noch einmal üben. Das Quiz-Ergebnis in Prozent zählt als Rekord.",
-    "Auf Windows zeigen Flaggen-Emojis nur Buchstaben, auf iPhone und iPad echte Flaggen.",
-  ],
-  sources: [
-    { label: "Vereinte Nationen: Mitgliedstaaten", url: "https://www.un.org/en/about-us/member-states" },
-    { label: "Auswärtiges Amt: Länderinformationen", url: "https://www.auswaertiges-amt.de/de/aussenpolitik/laender" },
-  ],
-};
-
-export function GeoTrainer({ onFinish }: TrainerProps) {
-  const [art, setArt] = useState("gemischt");
-  const [region, setRegion] = useState("welt");
-  const [tasks, setTasks] = useState<GeoTask[] | null>(null);
-
-  const start = () => {
-    const pool = region === "europa" ? COUNTRIES.filter((c) => c.region === "Europa") : COUNTRIES;
-    const chosen = shuffle(pool).slice(0, 10);
-    setTasks(chosen.map((country, i) => {
-      let kind: GeoTask["kind"] = art === "flaggen" ? "flag" : art === "hauptstaedte" ? "capital" : i % 2 === 0 ? "flag" : "capital";
-      if (kind === "capital" && CAPITAL_AMBIGUOUS.has(country.iso)) kind = "flag";
-      const near = shuffle(pool.filter((c) => c.iso !== country.iso && (c.region === country.region || Math.random() < 0.3))).slice(0, 3);
-      const others = near.length < 3 ? shuffle(COUNTRIES.filter((c) => c.iso !== country.iso && !near.includes(c))).slice(0, 3 - near.length) : [];
-      const all = shuffle([country, ...near, ...others]);
-      return { kind, country, options: all.map((c) => (kind === "flag" ? c.name : c.capital)), answer: kind === "flag" ? country.name : country.capital };
-    }));
-  };
-
-  if (!tasks) {
-    return (
-      <Setup title="Flaggen & Geografie" lead="10 Fragen mit vier Antworten." onStart={start} how={GEO_HOW}>
-        <Group header="Fragen">{row(<Segmented options={[{ value: "flaggen", label: "Flaggen" }, { value: "hauptstaedte", label: "Hauptstädte" }, { value: "gemischt", label: "Gemischt" }]} value={art} onChange={setArt} />)}</Group>
-        <Group header="Gebiet">{row(<Segmented options={[{ value: "europa", label: "Europa" }, { value: "welt", label: "Welt" }]} value={region} onChange={setRegion} />)}</Group>
-      </Setup>
-    );
-  }
-  return (
-    <Round tasks={tasks}
-      prompt={(t) => t.kind === "flag"
-        ? <div className="tr-flag"><span aria-hidden="true">{flagOf(t.country.iso)}</span><div className="tr-lead">Welches Land?</div></div>
-        : <div className="tr-q is-text"><small>Hauptstadt von</small>{t.country.name}</div>}
-      input={{ kind: "choices", options: (t) => t.options, columns: 1 }}
-      isRight={(t, a) => a === t.answer} correct={(t) => t.answer}
-      note={(s) => `Quiz-Ergebnis: ${Math.round((100 * s.right) / s.total)} % – wird als Rekord gespeichert.`}
-      onRestart={() => setTasks(null)}
-      onFinish={(s) => onFinish({
-        elapsedMs: s.totalMs,
-        headline: `${s.right} von ${s.total} richtig (Ø ${de1(s.totalMs / 1000 / s.total)} s)`,
-        record: { value: Math.round((100 * s.right) / s.total), label: "Quiz-Ergebnis", unit: "%", higher: true },
       })} />
   );
 }

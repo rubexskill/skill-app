@@ -163,7 +163,7 @@ export async function integrityProblems(page) {
   return page.evaluate(async () => {
     const db = window.db; const out = [];
     const all = {};
-    for (const n of ["skills", "sessions", "todos", "lists", "units", "parts", "recordings", "terms", "wishes", "inbox", "apps", "records", "cards", "checks"]) { try { all[n] = await db.table(n).toArray(); } catch { all[n] = []; } }
+    for (const n of ["skills", "sessions", "todos", "lists", "units", "parts", "recordings", "terms", "wishes", "inbox", "apps", "records", "cards", "checks", "flagStats"]) { try { all[n] = await db.table(n).toArray(); } catch { all[n] = []; } }
     const ids = (n) => new Set(all[n].map((x) => x.id));
     for (const [n, rows] of Object.entries(all)) {
       const seen = new Set();
@@ -179,6 +179,8 @@ export async function integrityProblems(page) {
     for (const u of all.units) if (!skills.has(u.skillId)) out.push(`Stück ${u.id}: Skill fehlt`);
     for (const p of all.parts) { if (!units.has(p.unitId)) out.push(`Abschnitt ${p.id}: Stück fehlt`); const cids = new Set(); for (const c of p.clips ?? []) { if (cids.has(c.id)) out.push(`Abschnitt ${p.id}: doppelter Clip`); cids.add(c.id); } }
     for (const r of all.recordings) { if (!units.has(r.unitId)) out.push(`Aufnahme ${r.id}: Stück fehlt`); if (r.partId && !parts.has(r.partId)) out.push(`Aufnahme ${r.id}: Abschnitt fehlt`); }
+    const FD = window.app.flags.data;
+    for (const f of all.flagStats) { if (!FD.BY_ISO.has(f.id)) out.push(`Lernstand ${f.id}: unbekannte Flagge`); if (!(f.level >= 0 && f.level <= 4)) out.push(`Lernstand ${f.id}: Stufe ${f.level}`); if (f.right + f.wrong !== f.seen) out.push(`Lernstand ${f.id}: Zähler passen nicht`); }
     const clipIds = new Set(all.parts.flatMap((p) => (p.clips ?? []).map((c) => c.id))); const recIds = ids("recordings");
     for (const k of await db.clipBlobs.toCollection().primaryKeys()) if (!clipIds.has(k)) out.push(`Video ${k}: Clip fehlt`);
     for (const k of await db.recBlobs.toCollection().primaryKeys()) if (!recIds.has(k)) out.push(`Audio ${k}: Aufnahme fehlt`);
@@ -190,7 +192,7 @@ export async function integrityProblems(page) {
 /** Sicherungsrelevanter Datenbestand als vergleichbarer Text (ohne Änderungszeiten). */
 export async function snapshot(page) {
   return page.evaluate(async () => {
-    const names = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings"];
+    const names = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats"];
     const strip = (v) => Array.isArray(v) ? v.map(strip) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).filter((k) => k !== "upd").sort().map((k) => [k, strip(v[k])])) : v;
     const out = {};
     for (const n of names) out[n] = (await window.db.table(n).toArray()).map(strip).sort((a, b) => String(a.id ?? JSON.stringify(a)).localeCompare(String(b.id ?? JSON.stringify(b))));
@@ -208,7 +210,7 @@ export const matrix = (full) => {
 /** Tippt in die Mitte eines Elements (scrollt es vorher in die Mitte; Tab-Leiste bleibt, wo sie ist). */
 export async function tap(page, loc, wait = 450) {
   const el = typeof loc === "string" ? page.locator(loc).first() : loc;
-  await el.evaluate((e) => { if (!e.closest(".tabbar, .navbar, .sheet-layer, .as-layer, .fsp")) e.scrollIntoView({ block: "center" }); });
+  await el.evaluate((e) => { if (e.closest(".sheet-layer")) e.scrollIntoView({ block: "nearest" }); else if (!e.closest(".tabbar, .navbar, .as-layer, .fsp")) e.scrollIntoView({ block: "center" }); });
   await sleep(100);
   const b = await el.boundingBox();
   if (!b) throw new Error("kein Rahmen: " + el);
@@ -256,4 +258,73 @@ export async function blobsWork(page) {
   return page.evaluate(async () => {
     try { await window.db.covers.put({ id: "__probe", blob: new Blob([new Uint8Array(4)], { type: "image/png" }) }); await window.db.covers.delete("__probe"); return true; } catch { return false; }
   });
+}
+
+// ---------------- Flaggen-Trainer ----------------
+
+/** Prüft die Oberfläche des Flaggen-Trainers (im Blatt): nichts außerhalb, Mindestgrößen, Bilder geladen und 4:3, Antworten überlappen nicht. */
+export async function flagProblems(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector(".sheet-layer.is-shown .fl") ?? document.querySelector(".fl");
+    if (!root) return [];
+    const panel = root.closest(".sheet") ?? document.body;
+    const pr = panel.getBoundingClientRect();
+    const vw = innerWidth, vh = innerHeight;
+    const out = [];
+    const vis = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; };
+    for (const el of root.querySelectorAll("*")) {
+      if (!vis(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.right > pr.right + 1 || r.left < pr.left - 1 || r.right > vw + 1) out.push(`Flaggen: ${el.tagName}.${String(el.className).slice(0, 24)} ragt seitlich heraus`);
+    }
+    const inView = (r) => r.bottom > 0 && r.top < vh && r.bottom > pr.top && r.top < pr.bottom;
+    for (const b of root.querySelectorAll(".fl-ans")) { const r = b.getBoundingClientRect(); if (vis(b) && r.height < 51.5) out.push(`Antwortfläche nur ${Math.round(r.height)} px hoch`); if (b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1) out.push("Antworttext wird abgeschnitten"); }
+    for (const b of root.querySelectorAll(".fl-x, .fl-icon, .fl-chip, .fl-back, .fl-go, .fl-next, .fl-big")) { const r = b.getBoundingClientRect(); if (vis(b) && (r.height < 43.5 || r.width < 43.5)) out.push(`Tippfläche ${b.className} zu klein (${Math.round(r.width)}×${Math.round(r.height)})`); }
+    for (const i of root.querySelectorAll("img.fl-img")) {
+      const r = i.getBoundingClientRect(); if (!vis(i) || !inView(r)) continue;
+      if (!i.complete || i.naturalWidth === 0) out.push(`Flagge nicht geladen: ${i.getAttribute("src")}`);
+      if (Math.abs(r.width / r.height - 4 / 3) > 0.03) out.push(`Flagge nicht 4:3: ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+    const ans = [...root.querySelectorAll(".fl-ans")].filter(vis);
+    for (let a = 0; a < ans.length; a++) for (let b = a + 1; b < ans.length; b++) {
+      const x = ans[a].getBoundingClientRect(), y = ans[b].getBoundingClientRect();
+      if (Math.min(x.right, y.right) - Math.max(x.left, y.left) > 1 && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 1) out.push("Antworten überlappen");
+    }
+    // gleich große Flaggen bei „Land → Flagge“
+    const fb = [...root.querySelectorAll(".fl-flagbtn")].filter(vis).map((b) => Math.round(b.getBoundingClientRect().width));
+    if (fb.length && new Set(fb).size > 1) out.push(`Flaggen-Antworten ungleich breit: ${fb.join("/")}`);
+    return [...new Set(out)].slice(0, 8);
+  });
+}
+
+/** Skill „Flaggen & Geografie“ öffnen und das Trainer-Blatt zeigen. */
+export async function openFlags(page) {
+  if (await page.locator(".tabbar").count()) await tabTap(page, "Übersicht");
+  await tap(page, page.locator('text="Flaggen & Geografie" >> visible=true').first(), 900);
+  await tap(page, page.locator(".trainer-btn:visible").first(), 900);
+}
+
+/** Wartet auf eine frische Frage oder das Ergebnis. */
+export async function flagReady(page) {
+  await page.waitForFunction(() => document.querySelector(".fl-score") || document.querySelector(".fl-ans:not(.is-right):not(.is-wrong):not(.is-dim)"), null, { timeout: 8000 });
+  await sleep(380); // Eingabeschutz nach neuer Frage
+}
+
+/** Beantwortet die aktuelle Frage richtig oder bewusst falsch. Gibt zurück, was gefragt war. */
+export async function flagAnswer(page, right, { next = true } = {}) {
+  await flagReady(page);
+  const info = await page.evaluate(() => {
+    const D = window.app.flags.data;
+    const flags = !!document.querySelector(".fl-answers.is-flags");
+    const buttons = [...document.querySelectorAll(".fl-ans")];
+    let iso, correct;
+    if (flags) { const name = document.querySelector(".fl-name").textContent; iso = D.FLAGS.find((f) => f.name === name).iso; correct = buttons.findIndex((b) => b.getAttribute("aria-label") === name); }
+    else { iso = document.querySelector(".fl-img.is-l").getAttribute("src").match(/flags\/(\w+)\.svg/)[1].toUpperCase(); const name = D.BY_ISO.get(iso).name; correct = buttons.findIndex((b) => b.textContent === name); }
+    return { iso, correct, n: buttons.length, dir: flags ? "country" : "flag" };
+  });
+  if (info.correct < 0) throw new Error("richtige Antwort nicht gefunden: " + info.iso);
+  const idx = right ? info.correct : (info.correct === 0 ? 1 : 0);
+  await tap(page, page.locator(".fl-ans").nth(idx), right ? 150 : 500);
+  if (!right) { if (next) await tap(page, page.locator(".fl-next"), 250); } else await sleep(800);
+  return info;
 }

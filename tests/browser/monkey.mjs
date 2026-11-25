@@ -1,7 +1,7 @@
 // Affentest: zufälliges Tippen, Wischen, Scrollen, Tippen von Text, Drehen, Navigieren – mit festem Startwert (wiederholbar).
 // Aufruf: node tests/browser/monkey.mjs   (SEEDS=11,22,33  ACTIONS=300  ENGINES=chromium,webkit  DARK=1)
 // Nach jedem Schritt: keine Konsolenfehler, nichts außerhalb/überlappend, Tippflächen und Tab-Leiste erreichbar, Daten gültig.
-import { buildDist, launchEngines, openApp, Report, rng, layoutProblems, integrityProblems, seedRich, tabTap, sleep } from "./lib.mjs";
+import { buildDist, launchEngines, openApp, Report, rng, layoutProblems, integrityProblems, seedRich, tabTap, sleep, flagProblems } from "./lib.mjs";
 
 const dist = buildDist();
 const { engines, notes } = await launchEngines();
@@ -12,6 +12,7 @@ const rep = new Report("monkey");
 const WORDS = ["Klavier", "Übung", "ÄÖÜ ß", "a", "   ", "<b>fett</b>", "🎹 Musik", "x".repeat(120), "Zahnarzt morgen #allgemein", "Mathe: Aufgabe 4", "https://example.com/seite", "0", "-1", "'; DROP TABLE;--", "Lernen\nZweite Zeile"];
 let totalActions = 0;
 const kinds = {};
+let flagSteps = 0;
 const kindOf = (w) => (/^tippe Text/.test(w) ? "Text" : /^tippe/.test(w) ? "Tippen" : /^wische/.test(w) ? "Wischen" : /^scrolle/.test(w) ? "Scrollen" : /^Tab/.test(w) ? "Tab" : /^zurück/.test(w) ? "Zurück" : /^drehe/.test(w) ? "Drehen" : /^Darstellung/.test(w) ? "Hell/Dunkel" : /^(keine|kein)/.test(w) ? "ohne Ziel" : /^Aktion scheiterte/.test(w) ? "gescheitert" : "Sonstiges");
 
 for (const eng of engines) for (const seed of seeds) {
@@ -48,6 +49,14 @@ for (const eng of engines) for (const seed of seeds) {
   const rows = () => page.evaluate(() => [...document.querySelectorAll(".swipe-content")].filter((e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 40 && r.top > 60 && r.bottom < innerHeight - 60 && cs.visibility !== "hidden" && !e.closest("[aria-hidden='true']") && !e.closest(".is-hidden, .is-covered, [hidden]"); }).map((e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }));
 
   const act = async () => {
+    // ab und zu gezielt in den Flaggen-Trainer, damit auch die neuen Seiten zufällig bedient werden
+    if (r.chance(0.04) && !(await page.locator(".fl").count())) {
+      await page.keyboard.press("Escape"); await sleep(300);
+      await page.locator(".tabbar").getByText("Übersicht", { exact: true }).first().tap({ timeout: 2000 }).catch(() => {}); await sleep(500);
+      await page.locator('text="Flaggen & Geografie" >> visible=true').first().tap({ timeout: 2000 }).catch(() => {}); await sleep(800);
+      await page.locator(".trainer-btn:visible").first().tap({ timeout: 2000 }).catch(() => {}); await sleep(700);
+      return "öffne Flaggen-Trainer";
+    }
     const roll = r.next();
     if (roll < 0.52) {
       const c = await candidates(); if (!c.length) return "keine Ziele";
@@ -87,7 +96,8 @@ for (const eng of engines) for (const seed of seeds) {
     try {
       const alive = await page.evaluate(() => !!window.db && !!document.querySelector(".tabbar"));
       if (!alive) probs.push("App nicht mehr bedienbar (Tab-Leiste/Datenbank fehlt)");
-      probs.push(...(await layoutProblems(page)));
+      if (await page.locator(".fl").count()) flagSteps++;
+      probs.push(...(await layoutProblems(page)), ...(await flagProblems(page)));
       if (i % 10 === 0) probs.push(...(await integrityProblems(page)));
     } catch (e) { probs.push(`Prüfung scheiterte: ${String(e.message).split("\n")[0].slice(0, 100)}`); }
     probs.push(...errors.splice(0));
@@ -99,6 +109,6 @@ for (const eng of engines) for (const seed of seeds) {
   await context.close();
 }
 for (const e of engines) await e.browser.close();
-const res = rep.finish({ engines: engines.map((e) => e.name), seeds, actionsTotal: totalActions, kinds, notes });
-console.log("Aktionen nach Art:", JSON.stringify(kinds));
+const res = rep.finish({ engines: engines.map((e) => e.name), seeds, actionsTotal: totalActions, kinds, flagSteps, notes });
+console.log("Aktionen nach Art:", JSON.stringify(kinds), "· Schritte im Flaggen-Trainer:", flagSteps);
 process.exit(res.failures.length ? 1 : 0);

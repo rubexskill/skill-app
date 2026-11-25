@@ -3,7 +3,6 @@ import { db } from "../src/db";
 import { createSkill, deleteSkill, weekBuckets, startOfWeek, monthBuckets, dailyMinutes, streakDays } from "../src/logic";
 import { applySync, exportSync, parseSync } from "../src/sync";
 import { parseMarkdown } from "../src/mdparse";
-import { COUNTRIES } from "../src/trainer/data";
 
 async function wipe() {
   for (const t of db.tables) await t.clear();
@@ -131,19 +130,5 @@ describe("Statistik", () => {
     expect(monthBuckets(s, 12).reduce((a, x) => a + x.minutes, 0)).toBe(3);
     expect([...dailyMinutes(s).values()].reduce((a, x) => a + x, 0)).toBe(3);
     expect(streakDays(dailyMinutes(s))).toBe(1);
-  });
-});
-
-describe("Länderdaten", () => {
-  it("ISO-Codes und Hauptstädte sind eindeutig", () => {
-    const iso = COUNTRIES.map((c) => c.iso);
-    expect(new Set(iso).size).toBe(iso.length);
-    for (const c of COUNTRIES) expect(c.iso).toMatch(/^[A-Z]{2}$/);
-    const caps = COUNTRIES.map((c) => c.capital);
-    expect(new Set(caps).size).toBe(caps.length);
-  });
-  it("Stichproben", () => {
-    const cap = (iso: string) => COUNTRIES.find((c) => c.iso === iso)?.capital;
-    expect([cap("DE"), cap("AU"), cap("CA"), cap("TR"), cap("CH"), cap("BR")]).toEqual(["Berlin", "Canberra", "Ottawa", "Ankara", "Bern", "Brasília"]);
   });
 });

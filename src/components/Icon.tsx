@@ -132,6 +132,13 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M5.5 15.5v3a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-3" />
     </g>
   ),
+  sliders: (
+    <g {...S}>
+      <path d="M5 8h8M17 8h2M5 16h2M11 16h8" />
+      <circle cx="15" cy="8" r="2" />
+      <circle cx="9" cy="16" r="2" />
+    </g>
+  ),
   apps: (
     <g {...S}>
       <rect x="4" y="4" width="7" height="7" rx="2" />

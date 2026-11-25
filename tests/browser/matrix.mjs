@@ -1,6 +1,6 @@
 // Layout-Matrix: Hauptseiten in beiden Motoren, 375/390/430 px, Hoch- und Querformat, hell und dunkel.
 // Prüft je Seite: kein seitliches Verschieben, nichts außerhalb, nichts überlappt, Tippflächen erreichbar, Tab-Leiste erreichbar, keine Konsolenfehler, Daten gültig.
-import { buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, matrix, seedRich, tap, tabTap, sleep } from "./lib.mjs";
+import { buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, matrix, seedRich, tap, tabTap, sleep, flagProblems, openFlags, flagAnswer, flagReady } from "./lib.mjs";
 
 const dist = buildDist();
 const { engines, notes } = await launchEngines();
@@ -9,7 +9,7 @@ const rep = new Report("matrix");
 const full = process.env.QUICK ? false : true;
 
 for (const eng of engines) {
-  for (const combo of matrix(full)) {
+  for (const combo of matrix(full).filter((c) => !process.env.COMBO || c.label.includes(process.env.COMBO))) {
     const tag = `${eng.name} ${combo.label}`;
     let ctx;
     try {
@@ -19,7 +19,7 @@ for (const eng of engines) {
       await sleep(400);
       const check = async (name) => {
         await sleep(250);
-        const probs = await layoutProblems(page);
+        const probs = [...(await layoutProblems(page)), ...(await flagProblems(page))];
         if (probs.length) await rep.fail(page, `${tag} · ${name}: ${probs.join(" | ")}`, `${eng.name}-${combo.label}-${name}`);
         else rep.ok(true);
         if (errors.length) { await rep.fail(page, `${tag} · ${name}: Konsole: ${errors.splice(0).join(" | ").slice(0, 300)}`, "konsole"); } else rep.ok(true);
@@ -39,6 +39,40 @@ for (const eng of engines) {
       for (const f of ["Metronom", "Aufnahmen"]) { await tap(page, page.locator(".page[aria-hidden='false'] .fold-head", { hasText: f }).first()); await check(`Stück ${f}`); }
       await tap(page, page.locator(".part-main").first());
       await check("Abschnitt");
+      // Flaggen-Trainer: Start, beide Fragearten, falsche Antwort, Ergebnis, Fortschritt, Einstellungen
+      const closeSheet = async () => { await tap(page, page.locator(".sheet-bar button, .sheet-head button", { hasText: "Schließen" }).locator("visible=true").first(), 700); };
+      const V = (sel) => page.locator(sel).locator("visible=true");
+      await openFlags(page);
+      await check("Flaggen Start");
+      for (const dir of ["flag", "country"]) {
+        await page.evaluate((d) => { const p = JSON.parse(localStorage.getItem("flags.prefs") ?? "{}"); localStorage.setItem("flags.prefs", JSON.stringify({ ...p, direction: d, amount: 10, scope: "all" })); }, dir);
+        await closeSheet(); await openFlags(page);
+        await tap(page, V(".fl-go").first(), 800); await flagReady(page);
+        await check(`Flaggen Frage ${dir}`);
+        await flagAnswer(page, false, { next: false }); await sleep(300);
+        await check(`Flaggen falsch ${dir}`);
+        await tap(page, V(".fl-next").first(), 400);
+        await tap(page, V(".fl-x").first(), 600);
+      }
+      await page.evaluate(() => {
+        const R = window.app.flags; const run = R.logic.startRun(R.logic.DEFAULT_PREFS, new Map(), Math.random, Date.now());
+        run.queue = run.queue.slice(0, 1); run.done = 9; run.total = 10;
+        run.first = { FR: true, DE: false, IT: true, ES: false, PT: true, PL: false, NL: true, BE: true, AT: true };
+        localStorage.setItem("flags.run", JSON.stringify(run));
+      });
+      await closeSheet(); await openFlags(page);
+      await check("Flaggen Start mit Fortsetzen");
+      await tap(page, V(".fl-resume").first(), 700);
+      await flagAnswer(page, true);
+      await page.waitForSelector(".fl-score", { timeout: 8000 }); await sleep(300);
+      await check("Flaggen Ergebnis");
+      await tap(page, V(".fl-big").filter({ hasText: "Fertig" }).first(), 500);
+      await tap(page, V('.fl-icon[aria-label="Fortschritt"]').first(), 800); await check("Flaggen Fortschritt");
+      await tap(page, V(".fl-cell").nth(20), 300); await check("Flaggen Fortschritt Auswahl");
+      await tap(page, V(".fl-back").first(), 400);
+      await tap(page, V('.fl-icon[aria-label="Einstellungen"]').first(), 700); await check("Flaggen Einstellungen");
+      await tap(page, V(".fl-back").first(), 400);
+      await closeSheet();
       rep.ok((await integrityProblems(page)).length === 0, `${tag}: Daten ungültig`);
     } catch (e) {
       await rep.fail(ctx?.page, `${tag}: Abbruch – ${String(e.message).split("\n")[0].slice(0, 200)}`, "abbruch");

@@ -2,7 +2,7 @@
 // Nach jedem Schritt: Layout, Konsole, Datenintegrität.
 import fs from "node:fs";
 import path from "node:path";
-import { buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, snapshot, blobsWork, tap, tabTap, sleep, resultsDir } from "./lib.mjs";
+import { buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, snapshot, blobsWork, tap, tabTap, sleep, resultsDir, flagProblems, openFlags, flagAnswer, flagReady } from "./lib.mjs";
 
 const dist = buildDist();
 const { engines, notes } = await launchEngines();
@@ -36,7 +36,7 @@ for (const eng of engines) {
 
   const check = async (name) => {
     await sleep(200);
-    const lp = await layoutProblems(page);
+    const lp = [...(await layoutProblems(page)), ...(await flagProblems(page))];
     const ip = await integrityProblems(page);
     const er = errors.splice(0);
     if (lp.length) await rep.fail(page, `${tag} · ${name}: Layout ${lp.join(" | ")}`, `${tag}-${name}`); else rep.ok(true);
@@ -245,6 +245,84 @@ for (const eng of engines) {
     await tap(page, V(".toast-action").first(), 700).catch(() => {});
   });
 
+
+  // ---------- Flaggen-Trainer ----------
+  await step("Flaggen: Skill ist da, Trainer öffnet", async () => {
+    await db(() => { localStorage.removeItem("flags.run"); });
+    await tabTap(page, "Übersicht");
+    await openFlags(page);
+    expect(await V(".fl-go").count() === 1, "Üben-Knopf fehlt");
+    expect(/von 195 sicher/.test(await V(".fl-sure").first().textContent()), "„x von 195 sicher“ fehlt");
+    expect(await V(".fl-chip").count() === 2, "Auswahl für Umfang und Bereich fehlt");
+  });
+  await step("Flaggen: Quiz mit 10 Fragen (7 richtig, 3 falsch), Ergebnis, Fehler wiederholen", async () => {
+    await tap(page, V(".fl-go").first(), 700);
+    const plan = [true, true, false, true, true, false, true, false, true, true];
+    // die ersten zehn Fragen nach Plan; falsche Flaggen kommen im selben Durchgang wieder (dann richtig beantwortet)
+    for (let i = 0; i < 40; i++) {
+      await flagReady(page);
+      if (await V(".fl-score").count()) break;
+      const w = await page.locator(".fl-bar i").first().evaluate((e) => parseFloat(e.style.width));
+      expect(w >= 0 && w <= 100, "Fortschrittsbalken außerhalb 0–100 %");
+      await flagAnswer(page, i < plan.length ? plan[i] : true);
+    }
+    await page.waitForSelector(".fl-score", { timeout: 8000 });
+    expect(/70/.test(await V(".fl-score").first().textContent()), "Ergebnis ist nicht 70 %");
+    expect(await V(".fl-miss li").count() === 3, "Liste der falschen Flaggen hat nicht 3 Zeilen");
+    const stats = await db(() => window.db.flagStats.toArray());
+    expect(stats.length >= 10, `Lernstand zu wenig Zeilen: ${stats.length}`);
+    expect(stats.filter((x) => x.wrong >= 1).length >= 3, "Fehler nicht im Lernstand");
+    await tap(page, V(".fl-big").filter({ hasText: "Fehler wiederholen" }).first(), 700);
+    for (let i = 0; i < 3; i++) await flagAnswer(page, true);
+    await page.waitForSelector(".fl-score", { timeout: 8000 });
+    expect(/100/.test(await V(".fl-score").first().textContent()), "Wiederholung nicht 100 %");
+    expect(await V(".fl-big").filter({ hasText: "Fehler wiederholen" }).count() === 0, "„Fehler wiederholen“ trotz 100 %");
+    await tap(page, V(".fl-big").filter({ hasText: "Fertig" }).first(), 500);
+    expect(await V(".fl-go").count() === 1, "Nach „Fertig“ nicht auf der Startseite");
+  });
+  await step("Flaggen: abbrechen und fortsetzen", async () => {
+    await tap(page, V(".fl-go").first(), 700);
+    for (let i = 0; i < 3; i++) await flagAnswer(page, true);
+    await flagReady(page);
+    await tap(page, V(".fl-x").first(), 600);
+    expect(await V(".fl-resume").count() === 1, "„Fortsetzen“ wird nicht angeboten");
+    expect(/3 von 10/.test(await V(".fl-resume").first().textContent()), "Zwischenstand falsch: " + (await V(".fl-resume").first().textContent()));
+    await tap(page, V(".fl-resume").first(), 700);
+    const w = await page.locator(".fl-bar i").first().evaluate((e) => parseFloat(e.style.width));
+    expect(Math.abs(w - 30) < 1, `Fortschritt nach Fortsetzen ${w} statt 30 %`);
+    for (let i = 0; i < 7; i++) await flagAnswer(page, true);
+    await page.waitForSelector(".fl-score", { timeout: 8000 });
+    await tap(page, V(".fl-big").filter({ hasText: "Fertig" }).first(), 500);
+    expect(await V(".fl-resume").count() === 0, "„Fortsetzen“ bleibt nach dem Ende stehen");
+  });
+  await step("Flaggen: Umfang, Bereich, Einstellungen, Fortschritt", async () => {
+    await tap(page, V(".fl-chip").nth(0), 400);
+    await tap(page, asBtn("Endlos"), 400);
+    await tap(page, V(".fl-chip").nth(1), 400);
+    await tap(page, asBtn("Nach Kontinent"), 400);
+    await tap(page, asBtn("Ozeanien"), 400);
+    expect(/Ozeanien/.test(await V(".fl-chip").nth(1).textContent()), "Bereich „Ozeanien“ nicht gewählt");
+    await tap(page, V(".fl-go").first(), 700);
+    await flagReady(page);
+    expect(await V(".fl-endless").count() === 1, "Endlos zeigt keinen Zähler");
+    for (let i = 0; i < 3; i++) await flagAnswer(page, true);
+    await tap(page, V(".fl-x").first(), 600);
+    await db(() => localStorage.removeItem("flags.run"));
+    await page.reload(); await page.waitForFunction(() => window.db && window.__toast); await sleep(500);
+    await openFlags(page);
+    expect(await V(".fl-resume").count() === 0, "Zwischenstand trotz Löschen noch da");
+    await tap(page, V('.fl-icon[aria-label="Fortschritt"]').first(), 700);
+    expect(await V(".fl-cell").count() === 195, `Fortschritts-Raster zeigt ${await V(".fl-cell").count()} statt 195 Flaggen`);
+    await tap(page, V(".fl-cell").first(), 300);
+    expect(await V(".fl-info b, .fl-info .fl-miss-name").count() >= 1, "Tippen zeigt kein Land");
+    await tap(page, V(".fl-back").first(), 400);
+    await tap(page, V('.fl-icon[aria-label="Einstellungen"]').first(), 600);
+    await tap(page, V(".row").filter({ hasText: "Bekannte Gebiete" }).locator(".switch, [role=switch], input").first(), 400).catch(() => {});
+    await tap(page, V(".fl-back").first(), 400);
+    await db(() => { const p = JSON.parse(localStorage.getItem("flags.prefs")); p.amount = 10; p.scope = "all"; p.territories = false; localStorage.setItem("flags.prefs", JSON.stringify(p)); });
+    await tap(page, V(".sheet-bar button, .sheet-head button").filter({ hasText: "Schließen" }).first(), 700);
+  });
+
   // ---------- Backup und Wiederherstellung ----------
   await step("Backup exportieren, Daten löschen, importieren – identisch", async () => {
     await tabTap(page, "Mehr");
@@ -258,6 +336,7 @@ for (const eng of engines) {
     const json = JSON.parse(fs.readFileSync(file, "utf8"));
     expect(json.format === "skill-app-backup" && json.skills.length > 0, "Backup-Datei ungültig");
     expect(!JSON.stringify(json).includes("blob"), "Backup enthält Blobs");
+    expect(Array.isArray(json.flagStats) && json.flagStats.length > 0, "Backup enthält keinen Flaggen-Lernstand");
     await db(async () => { for (const t of window.db.tables) await t.clear(); });
     await sleep(400);
     await page.locator('input[type=file][accept*="json"], input[type=file]').filter({ hasNot: page.locator("[accept^='video']") }).first().setInputFiles(file).catch(async () => { await page.locator("input[type=file]").first().setInputFiles(file); });
