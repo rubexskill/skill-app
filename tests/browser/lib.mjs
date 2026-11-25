@@ -371,8 +371,8 @@ export async function dragMouse(page, x, y, dx, dy, { steps = 14, wait = 18, hol
 }
 
 /** Würfel-Trainer: Zeichenfläche sinnvoll groß und im Blatt, Bedienelemente erreichbar und groß genug, Zeit lesbar */
-export async function cubeProblems(page) {
-  return page.evaluate(() => {
+export async function cubeProblems(page, ref) {
+  return page.evaluate((ref) => {
     const out = [];
     const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && !e.closest("[aria-hidden='true']:not(.sheet-layer)"); };
     const root = document.querySelector(".cz");
@@ -385,6 +385,8 @@ export async function cubeProblems(page) {
       if (r.left < -1 || r.right > vw + 1) out.push("Würfelfläche ragt seitlich heraus");
       const c = host.querySelector("canvas");
       if (c && (Math.abs(c.getBoundingClientRect().width - r.width) > 2)) out.push("Zeichenfläche passt nicht zum Rahmen");
+      // gleiche Größe in allen Ansichten (Start, Wiedergabe, Lernpfad, Üben)
+      if (ref) { if (!ref.w) { ref.w = r.width; ref.h = r.height; } else if (Math.abs(ref.w - r.width) > 1.5 || Math.abs(ref.h - r.height) > 1.5) out.push(`Würfel ändert die Größe (${Math.round(ref.w)}×${Math.round(ref.h)} → ${Math.round(r.width)}×${Math.round(r.height)})`); }
     }
     for (const b of root.querySelectorAll("button, input")) {
       if (!vis(b)) continue;
@@ -397,8 +399,16 @@ export async function cubeProblems(page) {
       const r = b.getBoundingClientRect();
       if (r.height < 36 || r.width < 36) out.push(`Notationsmarke zu klein ${Math.round(r.width)}×${Math.round(r.height)}`);
     }
+    const pl = root.querySelector(".cz-player");
+    if (pl && vis(pl)) {
+      const pr = pl.getBoundingClientRect();
+      for (const e of pl.querySelectorAll("button, .cz-pl-now, .cz-pl-phase")) {
+        const r = e.getBoundingClientRect();
+        if (r.width && (r.right > pr.right + 1 || r.left < pr.left - 1)) out.push(`Wiedergabeleiste: ${e.getAttribute("aria-label") || e.className} ragt seitlich heraus`);
+      }
+    }
     const t = root.querySelector(".cz-time");
     if (t && vis(t) && parseFloat(getComputedStyle(t).fontSize) < 32) out.push("Zeitanzeige zu klein");
     return out;
-  });
+  }, ref);
 }

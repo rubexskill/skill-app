@@ -3,18 +3,20 @@
 // Zwei-Finger-Pinch zoomt, Doppeltippen auf den Hintergrund stellt die Ansicht wieder her. Der Würfelzustand liegt in der Engine, nicht in der Grafik.
 import {
   CanvasTexture, CircleGeometry, DirectionalLight, ExtrudeGeometry, Group, HemisphereLight, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator,
-  Quaternion, Raycaster, Scene, Shape, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type BufferGeometry, type Material,
+  Euler, Quaternion, Raycaster, Scene, Shape, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type BufferGeometry, type Material,
 } from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { FACE_COLORS, STICKERS, applyMove, cloneCube, quarterTurns, solvedCube, stickerIndex, type Cube, type Vec } from "./engine";
 import { DRAG_THRESHOLD, chooseLayerDrag, dragAngle, moveForDrag, snapQuarters, type LayerDrag } from "./drag";
+import { IDLE, step as gestureStep, type Ev, type Fx, type GState } from "./gesture";
+import { DEFAULT_PITCH, DEFAULT_YAW, blendToDefault, clampPitch, clampZoom, normalizeYaw, rotateView as turnView } from "./view";
 
 export interface CubeView {
   getState(): Cube;
   setState(c: Cube): void;
   /** Züge nacheinander animiert ausführen (Warteschlange); `onMove` meldet den Beginn jedes Zugs. Ergibt false, wenn abgebrochen wurde. */
-  applyMoves(moves: string[], opts?: { ms?: number; onMove?: (i: number) => void }): Promise<boolean>;
+  applyMoves(moves: string[], opts?: { ms?: number; onMove?: (i: number) => void; highlight?: boolean }): Promise<boolean>;
   /** Eine Schicht einmal vordrehen und zurück – der Zustand bleibt unverändert */
   preview(move: string): Promise<void>;
   /** Wartende Züge verwerfen (der laufende Zug wird noch fertig) */
@@ -89,6 +91,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   scene.add(cubeGroup);
   const body = track(new RoundedBoxGeometry(0.96, 0.96, 0.96, 3, 0.1)) as BufferGeometry;
   const bodyMat = track(new MeshStandardMaterial({ color: 0x0d0d0f, roughness: 0.5, metalness: 0.05 }));
+  const hlMat = track(new MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.5, metalness: 0.05 })); // Schicht, die gerade gedreht wird
   const sticker = (() => {
     const h = 0.41, r = 0.13, s = new Shape();
     s.moveTo(-h + r, -h); s.lineTo(h - r, -h); s.quadraticCurveTo(h, -h, h, -h + r); s.lineTo(h, h - r); s.quadraticCurveTo(h, h, h - r, h);
@@ -147,13 +150,14 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   const recolor = () => { for (let i = 0; i < 54; i++) stickerMeshes[i].material = mats[state[i]]; };
   recolor();
 
-  // ---------- Ansicht ----------
-  const defaultQ = new Quaternion().setFromAxisAngle(AXES[0], (30 * Math.PI) / 180).multiply(new Quaternion().setFromAxisAngle(AXES[1], (-35 * Math.PI) / 180));
-  cubeGroup.quaternion.copy(defaultQ);
+  // ---------- Ansicht (Drehteller: seitlich frei, nach oben/unten begrenzt, kein Verkippen) ----------
+  let yaw = DEFAULT_YAW, pitch = DEFAULT_PITCH;
+  const euler = new Euler(0, 0, 0, "XYZ");
+  const applyView = () => { euler.set(pitch, yaw, 0, "XYZ"); cubeGroup.quaternion.setFromEuler(euler); };
+  applyView();
   let zoom = 1;
   let baseDist = 12;
   let width = 1, height = 1;
-  const ZOOM_MIN = 0.65, ZOOM_MAX = 1.7;
 
   const applyCamera = () => {
     const rad = (camera.fov * Math.PI) / 180;
@@ -188,7 +192,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   let pivotAxis = 0;
 
   let inertia = { yaw: 0, pitch: 0 };
-  let viewAnim: { from: Quaternion; fromZoom: number; start: number; dur: number } | null = null;
+  let viewAnim: { yaw: number; pitch: number; fromZoom: number; start: number; dur: number } | null = null;
 
   function frame(now: number) {
     raf = 0;
@@ -203,14 +207,17 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
       if (t >= 1) { const done = anim.onDone; anim = null; done(); } else more = true;
     }
     if (Math.abs(inertia.yaw) > 0.01 || Math.abs(inertia.pitch) > 0.01) {
-      rotateView(inertia.yaw * dt, inertia.pitch * dt);
+      rotateViewBy(inertia.yaw * dt, inertia.pitch * dt);
+      if (Math.abs(pitch) >= clampPitch(Infinity) - 1e-6) inertia.pitch = 0;
       const damp = Math.pow(0.04, dt);
       inertia.yaw *= damp; inertia.pitch *= damp;
       more = true;
     } else inertia = { yaw: 0, pitch: 0 };
     if (viewAnim) {
       const t = easeInOut(Math.min(1, (now - viewAnim.start) / viewAnim.dur));
-      cubeGroup.quaternion.copy(viewAnim.from).slerp(defaultQ, t);
+      const v = blendToDefault({ yaw: viewAnim.yaw, pitch: viewAnim.pitch }, t);
+      yaw = v.yaw; pitch = v.pitch;
+      applyView();
       zoom = viewAnim.fromZoom + (1 - viewAnim.fromZoom) * t;
       applyCamera();
       if (t >= 1) viewAnim = null; else more = true;
@@ -220,25 +227,29 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     if (!more && !queue.length && !anim) pump();
   }
 
-  const yawQ = new Quaternion(), pitchQ = new Quaternion();
-  function rotateView(yaw: number, pitch: number) {
-    yawQ.setFromAxisAngle(AXES[1], yaw);
-    pitchQ.setFromAxisAngle(AXES[0], pitch);
-    cubeGroup.quaternion.premultiply(yawQ).premultiply(pitchQ).normalize();
+  function rotateViewBy(dYaw: number, dPitch: number) {
+    const v = turnView({ yaw, pitch }, dYaw, dPitch);
+    yaw = v.yaw; pitch = v.pitch;
+    applyView();
     request();
   }
 
   // ---------- Schichten drehen ----------
   const layerCubies = (axis: number, layer: -1 | 0 | 1 | null) => cubies.filter((c) => layer === null || (c.userData.coord as number[])[axis] === layer);
   let inPivot: Group[] = [];
-  const grab = (axis: number, layer: -1 | 0 | 1 | null) => {
+  let highlighting = false;
+  const grab = (axis: number, layer: -1 | 0 | 1 | null, hl = false) => {
     release();
     pivotAxis = axis;
     inPivot = layerCubies(axis, layer);
+    highlighting = hl;
+    if (hl) for (const c of inPivot) (c.children[0] as Mesh).material = hlMat;
     for (const c of inPivot) pivot.add(c);
     pivot.quaternion.identity();
   };
   function release() {
+    if (highlighting) for (const c of inPivot) (c.children[0] as Mesh).material = bodyMat;
+    highlighting = false;
     for (const c of inPivot) cubeGroup.add(c);
     inPivot = [];
     pivot.quaternion.identity();
@@ -251,7 +262,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   };
 
   // ---------- Warteschlange für Züge aus dem Programm ----------
-  interface Job { moves: string[]; ms: number; onMove?: (i: number) => void; resolve: (ok: boolean) => void; canceled: boolean; preview?: boolean }
+  interface Job { moves: string[]; ms: number; onMove?: (i: number) => void; resolve: (ok: boolean) => void; canceled: boolean; preview?: boolean; highlight?: boolean }
   const queue: Job[] = [];
   let running: Job | null = null;
   let gesture: "none" | "layer" | "snap" = "none";
@@ -269,7 +280,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
       const move = job.moves[i];
       job.onMove?.(i);
       const { spec, q } = quarterTurns(move);
-      grab(spec.axis, spec.layer);
+      grab(spec.axis, spec.layer, job.highlight);
       const target = q * TAU4;
       anim = {
         from: 0, to: target, start: performance.now(), dur: job.ms * (Math.abs(q) === 2 ? 1.5 : 1), ease: job.ms < 120 ? easeOut : easeInOut,
@@ -319,8 +330,8 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     return { normal, point: [point.x, point.y, point.z] as Vec, coord: cubie.userData.coord as Vec };
   }
 
-  type Mode = "none" | "pending" | "layer" | "view" | "pinch" | "ignored";
-  let mode: Mode = "none";
+  // Bedienung über den Zustandsautomaten (gesture.ts): jedes Ende setzt alles sauber zurück
+  let g: GState = IDLE;
   const pointers = new Map<number, { x: number; y: number }>();
   let start = { x: 0, y: 0, t: 0 };
   let hitInfo: ReturnType<typeof pick> = null;
@@ -331,6 +342,9 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   let viewVel = { yaw: 0, pitch: 0 };
   let pinch = { dist: 0, zoom: 1 };
   let lastTap = { t: 0, x: 0, y: 0 };
+  let lastUp = { x: 0, y: 0 };
+  const lastSeen = new Map<number, number>(); // wann sich ein Finger zuletzt gemeldet hat
+  let cancelled = false;
 
   const listeners: [EventTarget, string, EventListener, AddEventListenerOptions | undefined][] = [];
   const on = (el: EventTarget, type: string, fn: (e: never) => void, o?: AddEventListenerOptions) => {
@@ -365,69 +379,98 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     request();
   }
 
+  const zoomPair = () => { const [a, b] = g.ids.slice(0, 2).map((i) => pointers.get(i)); return a && b ? Math.hypot(a.x - b.x, a.y - b.y) || 1 : 1; };
+
+  function run(fx: Fx[]) {
+    for (const f of fx) {
+      if (f === "endLayerCommit") endLayerGesture(false);
+      else if (f === "endLayerCancel") endLayerGesture(true);
+      else if (f === "startView") { viewVel = { yaw: 0, pitch: 0 }; inertia = { yaw: 0, pitch: 0 }; viewAnim = null; }
+      else if (f === "startZoom") { pinch = { dist: zoomPair(), zoom }; inertia = { yaw: 0, pitch: 0 }; viewAnim = null; }
+      else if (f === "endViewInertia") {
+        const now = performance.now();
+        const moved = Math.hypot(lastUp.x - start.x, lastUp.y - start.y);
+        if (!cancelled && moved < 8 && now - start.t < 300) {
+          // Doppeltippen auf den Hintergrund: Standardansicht
+          if (now - lastTap.t < 330 && Math.hypot(lastUp.x - lastTap.x, lastUp.y - lastTap.y) < 28) { lastTap = { t: 0, x: 0, y: 0 }; view.resetView(); } else lastTap = { t: now, x: lastUp.x, y: lastUp.y };
+        } else if (!cancelled && now - lastMove.t < 80) {
+          inertia = { yaw: Math.max(-6, Math.min(6, viewVel.yaw)), pitch: Math.max(-6, Math.min(6, viewVel.pitch)) };
+          request();
+        }
+      }
+      else if (f === "endViewStop" || f === "endZoom") inertia = { yaw: 0, pitch: 0 };
+    }
+  }
+
+  function dispatch(e: Ev) {
+    const r = gestureStep(g, e);
+    g = r.g;
+    run(r.fx);
+    if (g.ids.length === 0) { pointers.clear(); lastSeen.clear(); hitInfo = null; if (g.mode === "idle") drag = null; }
+  }
+  /** Jedes Ende ohne eigenes pointerup (Abbruch, Verlassen, Fokusverlust, Verstecken) */
+  const abort = () => { cancelled = true; dispatch({ t: "abort" }); pointers.clear(); cancelled = false; };
+
   function onDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     const p = toLocal(e.clientX, e.clientY);
+    const now = performance.now();
+    // Ein altes Loslassen ging verloren, wenn ein neuer Hauptfinger kommt und sich der alte seit 0,4 s nicht gemeldet hat
+    const silent = g.ids.length > 0 && g.ids.every((id) => now - (lastSeen.get(id) ?? 0) > 400);
+    const stale = (e.isPrimary && silent) || g.ids.includes(e.pointerId);
+    if (stale) pointers.clear();
+    lastSeen.set(e.pointerId, now);
     pointers.set(e.pointerId, p);
     try { canvas.setPointerCapture(e.pointerId); } catch { /* nicht überall möglich */ }
-    if (pointers.size >= 2) {
-      // zweiter Finger: Schicht verwerfen, Ansicht zoomen
-      if (mode === "layer") endLayerGesture(true);
-      mode = "pinch";
-      const [a, b] = [...pointers.values()];
-      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom };
-      inertia = { yaw: 0, pitch: 0 };
-      return;
+    const fresh = stale || g.ids.length === 0;
+    if (fresh) {
+      start = { x: p.x, y: p.y, t: performance.now() };
+      lastMove = { ...start };
+      hitInfo = pick(p.x, p.y);
     }
-    start = { x: p.x, y: p.y, t: performance.now() };
-    lastMove = { ...start };
-    viewVel = { yaw: 0, pitch: 0 };
-    inertia = { yaw: 0, pitch: 0 };
-    viewAnim = null;
-    hitInfo = pick(p.x, p.y);
-    if (hitInfo) mode = idle() ? "pending" : "ignored";
-    else mode = "view";
+    dispatch({ t: "down", id: e.pointerId, stale, onCube: fresh ? !!hitInfo : true, busy: !idle() });
+    if (!stale && !fresh && g.mode === "zoom") pinch = { dist: zoomPair(), zoom };
   }
 
   function onMovePtr(e: PointerEvent) {
-    const prev = pointers.get(e.pointerId);
-    if (!prev) return;
+    if (!pointers.has(e.pointerId)) return;
     e.preventDefault();
     const p = toLocal(e.clientX, e.clientY);
     pointers.set(e.pointerId, p);
-    if (mode === "pinch" && pointers.size >= 2) {
-      const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-      zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinch.zoom * (d / pinch.dist)));
-      applyCamera();
-      request();
+    lastSeen.set(e.pointerId, performance.now());
+    if (g.mode === "zoom") {
+      if (g.ids.length >= 2) {
+        zoom = clampZoom(pinch.zoom * (zoomPair() / pinch.dist));
+        applyCamera();
+        request();
+      }
       return;
     }
     const delta: [number, number] = [p.x - start.x, p.y - start.y];
-    if (mode === "pending" && hitInfo) {
+    if (g.mode === "pending" && hitInfo) {
       if (Math.hypot(delta[0], delta[1]) < DRAG_THRESHOLD) return;
       const d = chooseLayerDrag({ normal: hitInfo.normal, point: hitInfo.point, coord: hitInfo.coord, drag: delta, project });
       if (!d) return;
       drag = d;
-      mode = "layer";
+      dispatch({ t: "layerStart" });
       gesture = "layer";
       samples.length = 0;
       samples.push({ t: start.t, a: 0 }); // Beginn der Berührung zählt für die Geschwindigkeit
       opts.onTouch?.(true);
       grab(d.axis, d.layer);
     }
-    if (mode === "layer" && drag) {
+    if (g.mode === "schicht" && drag) {
       angle = dragAngle(drag, delta);
       setPivotAngle(drag.axis, angle);
       samples.push({ t: performance.now(), a: angle });
       if (samples.length > 8) samples.shift();
       request();
-    } else if (mode === "view") {
+    } else if (g.mode === "ansicht") {
       const now = performance.now();
       const dx = p.x - lastMove.x, dy = p.y - lastMove.y;
       const k = 0.0085;
-      rotateView(dx * k, dy * k);
+      rotateViewBy(dx * k, dy * k);
       const dtm = Math.max(0.008, (now - lastMove.t) / 1000);
       viewVel = { yaw: 0.6 * viewVel.yaw + 0.4 * ((dx * k) / dtm), pitch: 0.6 * viewVel.pitch + 0.4 * ((dy * k) / dtm) };
       lastMove = { x: p.x, y: p.y, t: now };
@@ -435,34 +478,24 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   }
 
   function onUp(e: PointerEvent) {
-    if (!pointers.has(e.pointerId)) return;
+    if (!g.ids.includes(e.pointerId)) { pointers.delete(e.pointerId); return; }
     const p = toLocal(e.clientX, e.clientY);
+    lastUp = p;
     pointers.delete(e.pointerId);
     try { canvas.releasePointerCapture(e.pointerId); } catch { /* schon frei */ }
-    if (mode === "pinch") { if (pointers.size === 0) mode = "none"; else if (pointers.size === 1) mode = "ignored"; return; }
-    if (pointers.size > 0) return;
-    const m = mode;
-    mode = "none";
-    if (m === "layer") endLayerGesture(e.type === "pointercancel");
-    else if (m === "view") {
-      const moved = Math.hypot(p.x - start.x, p.y - start.y);
-      const now = performance.now();
-      if (moved < 8 && now - start.t < 300 && e.type !== "pointercancel") {
-        // Doppeltippen auf den Hintergrund: Standardansicht
-        if (now - lastTap.t < 330 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 28) { lastTap = { t: 0, x: 0, y: 0 }; view.resetView(); } else lastTap = { t: now, x: p.x, y: p.y };
-      } else if (now - lastMove.t < 80 && e.type !== "pointercancel") {
-        inertia = { yaw: Math.max(-6, Math.min(6, viewVel.yaw)), pitch: Math.max(-6, Math.min(6, viewVel.pitch)) };
-        request();
-      }
-    }
-    hitInfo = null;
+    dispatch({ t: "up", id: e.pointerId });
   }
+  const onCancel = () => abort();
 
   on(canvas, "pointerdown", onDown, { passive: false });
   on(canvas, "pointermove", onMovePtr, { passive: false });
   on(canvas, "pointerup", onUp);
-  on(canvas, "pointercancel", onUp);
+  on(canvas, "pointercancel", onCancel);
+  on(canvas, "lostpointercapture", (e: PointerEvent) => { if (g.ids.includes(e.pointerId)) onUp(e); });
+  on(canvas, "pointerleave", (e: PointerEvent) => { if (e.pointerType === "mouse" && !canvas.hasPointerCapture(e.pointerId) && g.ids.includes(e.pointerId)) abort(); });
   on(canvas, "contextmenu", (e: Event) => e.preventDefault());
+  on(window, "blur", abort);
+  on(document, "visibilitychange", () => { if (document.hidden) abort(); });
   const ro = new ResizeObserver(() => resize());
   ro.observe(host);
   on(window, "orientationchange", () => window.setTimeout(resize, 200));
@@ -472,11 +505,21 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
 
   const view: CubeView = {
     getState: () => cloneCube(state),
-    setState(c) { if (running || anim) return; state = cloneCube(c); recolor(); request(); },
+    setState(c) {
+      // Springen: alles Laufende sauber abbrechen (Warteschlange, Animation, Geste), dann den Zustand setzen
+      for (const j of queue.splice(0)) j.resolve(false);
+      if (running) { running.canceled = true; running.resolve(false); running = null; }
+      if (g.mode === "schicht") { drag = null; opts.onTouch?.(false); }
+      anim = null; gesture = "none";
+      release();
+      state = cloneCube(c);
+      recolor();
+      request();
+    },
     applyMoves(moves, o = {}) {
       return new Promise<boolean>((resolve) => {
         if (!moves.length) return resolve(true);
-        queue.push({ moves, ms: o.ms ?? 220, onMove: o.onMove, resolve, canceled: false });
+        queue.push({ moves, ms: o.ms ?? 220, onMove: o.onMove, resolve, canceled: false, highlight: o.highlight });
         pump();
       });
     },
@@ -486,7 +529,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     cancelQueue() { for (const j of queue.splice(0)) j.resolve(false); if (running) running.canceled = true; },
     resetView() {
       inertia = { yaw: 0, pitch: 0 };
-      viewAnim = { from: cubeGroup.quaternion.clone(), fromZoom: zoom, start: performance.now(), dur: 380 };
+      viewAnim = { yaw, pitch, fromZoom: zoom, start: performance.now(), dur: 380 };
       request();
     },
     spin() { inertia = { yaw: 3.4, pitch: 0 }; request(); },
@@ -508,7 +551,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
       /** Ist der Aufkleber von vorn zu sehen? */
       visible(normal: Vec): boolean {
         const n = new Vector3(...normal).applyQuaternion(cubeGroup.quaternion);
-        return n.dot(new Vector3(0, 0, 1)) > 0.15;
+        return n.dot(new Vector3(0, 0, 1)) > 0.3;
       },
       /** beliebiger Punkt im Würfelraum in Seitenkoordinaten */
       project(p: Vec): [number, number] {
@@ -518,6 +561,16 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
         return [r.left + q[0], r.top + q[1]];
       },
       zoom: () => zoom,
+      /** Kamerazustand: Drehung seitlich/oben in Grad, Verkippung (muss 0 sein), Zoom */
+      camera() {
+        // Verkippung: Winkel der Würfel-Oberseite zur senkrechten Bildachse (bei einem Drehteller immer 0)
+        const up = new Vector3(0, 1, 0).applyQuaternion(cubeGroup.quaternion);
+        return { yaw: (yaw * 180) / Math.PI, pitch: (pitch * 180) / Math.PI, roll: (Math.atan2(up.x, up.y) * 180) / Math.PI, zoom, fov: camera.fov, dist: camera.position.z };
+      },
+      setView(yawDeg: number, pitchDeg: number) { yaw = normalizeYaw((yawDeg * Math.PI) / 180); pitch = clampPitch((pitchDeg * Math.PI) / 180); applyView(); request(); },
+      resetViewNow() { yaw = DEFAULT_YAW; pitch = DEFAULT_PITCH; zoom = 1; applyView(); applyCamera(); request(); },
+      /** Zustand des Gestenautomaten (für Tests) */
+      gesture: () => ({ mode: g.mode, ids: [...g.ids] }),
       index: (pos: Vec, normal: Vec) => stickerIndex(pos, normal),
       state: () => Array.from(state).join(""),
       busy: () => view.busy(),
@@ -532,7 +585,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     destroyed = true;
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
-    anim = null; viewAnim = null;
+    anim = null; viewAnim = null; g = IDLE;
     for (const j of queue.splice(0)) j.resolve(false);
     if (running) running.resolve(false);
     running = null;

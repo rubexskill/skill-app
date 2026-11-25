@@ -1,17 +1,20 @@
 # Testbericht – Selbsttests der App
 
-Stand: 25.11.2026 (nach dem Zauberwürfel-Trainer). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
+Stand: 25.11.2026 (nach Würfel-Löser, Drehteller-Ansicht und Gesten-Zustandsautomat). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
 
 ## Was getestet wird
 
 | Ebene | Wo | Fälle |
 |---|---|---:|
-| Einheitentests (Logik, Daten, Migration, Abgleich, Flaggen-Trainer) | `tests/*.test.ts`, Vitest | 353 |
+| Einheitentests (Logik, Daten, Migration, Abgleich, Flaggen-Trainer) | `tests/*.test.ts`, Vitest | 385 |
 | Überlauf und Layout (375/390/430 px, hell/dunkel) und Fehler-Tests zu gemeldeten Fehlern | `tests/browser/overflow.mjs`, `bugs.mjs` | laufen als eine Suite, Ergebnis ja/nein |
 | **Szenarien** (echte Abläufe per Touch und Eingabe) | `tests/browser/scenarios.mjs` | 253 |
-| **Würfel-Trainer** (Ziehen, Zeitnahme, Lernpfad, Aufräumen, beide Motoren) | `tests/browser/cube.mjs` | 490 |
+| **Würfel-Trainer** (Ziehen, Zeitnahme, Lernpfad, Aufräumen, beide Motoren) | `tests/browser/cube.mjs` | 490 (voll) · 164–168 (CI-leicht) |
+| **Würfel: Gesten, Ansicht, Lösung zeigen** | `tests/browser/cubeplay.mjs` | 143 je Motor |
 | **Layout-Matrix** (alle Hauptseiten und alle Flaggen-Ansichten, siehe unten) | `tests/browser/matrix.mjs` | 1704 |
 | **Affentest** (zufällig, festes Startwert) | `tests/browser/monkey.mjs` | 1800 (6 Läufe × 300 Aktionen, davon 403 Schritte im Flaggen-Trainer) |
+
+Hinweis: Die Zahlen unten stammen aus dem letzten vollen Lauf vor dem Löser; die leichte CI-Variante und die neue Suite `cubeplay` sind im Abschnitt „Löser und Bedienung“ ausgewiesen.
 
 Gesamt der Selbsttests: **4226 Fälle** im letzten vollständigen Lauf (Szenarien 232, Würfel 490, Matrix 1704, Affentest 1800); die vier Fehler dieses Laufs waren ein unscharfer Flaggen-Test (siehe „Gefunden und behoben“) und sind behoben, die Szenarien liefen danach in beiden Motoren mit 0 Fehlern erneut.
 
@@ -36,6 +39,14 @@ Skill anlegen · Status ändern · Notiz und Link speichern · Session hinzufüg
 - **Größe:** Der Würfel-Code samt three.js liegt in einem eigenen Chunk (≈ 606 KB, ≈ 155 KB komprimiert), der erst beim Öffnen des Trainers geladen wird; das Haupt-JavaScript wuchs nur um ≈ 3,5 KB. Im Service-Worker-Cache (offline) liegt der Chunk mit.
 - Ein automatischer Löser wurde bewusst nicht gebaut.
 
+### Löser und Bedienung (Würfel, 2. Ausbau)
+- **Einheitentests** (+32): Löser löst 2000 Zufallsmischungen (jede Zugfolge am Ausgangswürfel nachgespielt), jede Phase erreicht ihr Teilziel (unabhängig geprüft: Kreuz, weiße Ecken, zwei Schichten, gelbes Kreuz, Kanten, Eckenplätze, gelöst), Grenzfälle (gelöst, ein Zug entfernt, Mittelschicht und Würfeldrehungen verschieben die Mitten, gedrehter Würfel), ungültige Zustände (falsche Farbanzahl, einzeln verdrehte Ecke, vertauschte Kanten, umgeklappte Kante, zufällig vertauschte Aufkleber: nie eine falsche Lösung), Weiter/Zurück 3000-mal zufällig hin und her, Phasensprünge, Neuberechnen nach eigenem Zug; Gestenautomat (Pinch→Ziehen, Ziehen→Pinch, pointercancel in jeder Geste, beide Loslass-Reihenfolgen, verlorenes pointerup, 500 Zufallsfolgen enden immer in idle); Drehteller-Mathematik.
+- **Löser-Dauer:** im Mittel ≈ 2 ms, größter gemessener Wert 8 ms (Ziel: unter 1 s). Lösungen haben im Mittel ≈ 95, höchstens ≈ 210 Züge. Ein kurzer Löser (Web Worker) wurde nicht gebaut: der Weg per Anfängermethode ist schnell genug.
+- **`cubeplay.mjs`** (beide Motoren, 143 Fälle je Motor): Standardansicht gerade (Kamerazustand: 10°/10°, Roll 0, Vorderseite nicht schief), Drehteller nach vielen Wischern (≤ 80°, Roll 0), Doppeltippen und Knopf setzen zurück; Hänger-Tests mit echten Zeigerereignissen: Pinch→Ziehen, Ziehen→Pinch (kein Zug), pointercancel (Würfel/Hintergrund), zwei Finger in beiden Reihenfolgen, verlorenes pointerup, Fokusverlust und Verstecken, Mischen während einer Geste, Trägheit; danach muss sich jedes Mal Ansicht **und** Schicht wieder bedienen lassen; Lösung zeigen: Leiste direkt unter dem Würfel, gleiche Würfelgröße, Zähler und Phasentitel, Weiter/Zurück (genau ein Zug), schnelles Mehrfachtippen und zufälliges Tippen (Zähler passt immer zum Würfel), Springen (Anfang, Ende, Phasen), Pause, eigener Zug (neu berechnet), Beenden, Tipp.
+- **Matrix** (alle 12 Kombinationen je Motor): zusätzlich Lösung, Lösung nach einem Zug, Phasenübersicht, „Zeig mir“; neue Prüfungen: Würfel hat in allen Ansichten dieselbe Größe, Wiedergabeleiste ragt nirgends heraus, Tippflächen ≥ 44 px.
+- **CI:** schnelle Jobs (build, browser, e2e-core) blockieren die Veröffentlichung, schwere (Würfel, Affentest, WebKit) laufen parallel und blockieren nicht. Im Test mit sieben gleichzeitigen Läufen auf einem Rechner dauerte der längste Job 6,4 Minuten (Würfel, Chromium); alle sieben liefen ohne Fehler.
+- **Größe:** Würfel-Chunk 620 KB (160 KB komprimiert, vorher 606/155 KB), also +14,5 KB bzw. +5 KB für Löser, Wiedergabe und Zustandsautomat; er wird weiter erst beim Öffnen geladen.
+
 Nach jedem Schritt wird geprüft: Layout (nichts seitlich verschoben oder außerhalb, nichts überlappt, Tippflächen und Tab-Leiste erreichbar), keine Konsolenfehler, Datenintegrität (Verweise, Zahlen, Formate, keine verwaisten Dateien).
 
 ### Affentest
@@ -47,6 +58,8 @@ Tippt, wischt, scrollt, gibt Text ein (Umlaute, Emoji, 120 Zeichen, HTML, „DRO
 `.github/workflows/deploy.yml` hat einen eigenen Job `e2e`. Er installiert Chromium und WebKit, führt `npm run test:browser` und `npm run test:e2e` aus (Affentest mit Startwerten 11, 22, 33 à 300 Aktionen). Der Job `deploy` wartet auf `build` **und** `e2e` – schlägt ein Test fehl, wird nicht veröffentlicht. Bei Fehlern lädt der Job den Ordner `test-results` (Screenshots, JSON, Zusammenfassung) als Artefakt „testergebnisse“ hoch.
 
 ## Gefunden und behoben
+0. **Würfel: Hänger nach Pinch.** Ursache: Fingerzustand blieb hängen, wenn ein `pointerup` fehlte (der nächste Einzelfinger zählte als zweiter Finger, nur Zoomen ging). Behoben durch den Gestenautomaten (jedes Ende setzt zurück, hängen gebliebene Finger werden nach 0,4 s Stille verworfen). Beim Umbau fand der neue Test einen Fehler im Umbau selbst: das Aufräumen lief vor dem Abschluss der Schichtgeste, es kam kein Zug zustande.
+0. **Würfel: Beim Springen blieb eine laufende Animation hängen** (`setState` ignorierte laufende Züge); jetzt bricht es Warteschlange, Animation und Geste sauber ab.
 0. **Würfel: Seite hängt nach „gelöst“.** In der Frame-Funktion rief die Trägheit `request()` auf und am Ende wurde zusätzlich `requestAnimationFrame` geplant: jede Runde verdoppelte die Rückrufe, die Seite fror ein. Gefunden vom Würfel-Test (alle Folgeschritte liefen in Zeitüberschreitung). Behoben (nur eine geplante Runde); der Ruhezustandstest prüft, dass nach dem Auslaufen nicht mehr gezeichnet wird.
 0. **Würfel: Faltzeilen („Notation“, „Tipp zeigen“) und Notationsmarken kleiner als 44 px**, gefunden von der Matrix (`cubeProblems`). Behoben.
 0. **Würfel: Flick bei kurzer Berührung ignoriert.** Die Geschwindigkeit brauchte zwei Messpunkte im Ziehmodus; jetzt zählt der Berührungsbeginn mit. Das Zeitfenster für den Schwung wurde auf 140 ms erweitert, der Schwung-Faktor auf 0,1 gesenkt (schnelles Ziehen über 70° ergab sonst schon 180°).

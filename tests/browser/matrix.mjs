@@ -17,9 +17,10 @@ for (const eng of engines) {
       const { page, errors } = ctx;
       await seedRich(page);
       await sleep(400);
+      const cubeRef = {};
       const check = async (name) => {
         await sleep(250);
-        const probs = [...(await layoutProblems(page)), ...(await flagProblems(page)), ...(await cubeProblems(page))];
+        const probs = [...(await layoutProblems(page)), ...(await flagProblems(page)), ...(await cubeProblems(page, cubeRef))];
         if (probs.length) await rep.fail(page, `${tag} · ${name}: ${probs.join(" | ")}`, `${eng.name}-${combo.label}-${name}`);
         else rep.ok(true);
         if (errors.length) { await rep.fail(page, `${tag} · ${name}: Konsole: ${errors.splice(0).join(" | ").slice(0, 300)}`, "konsole"); } else rep.ok(true);
@@ -78,6 +79,11 @@ for (const eng of engines) {
       await tap(page, V(".cz-btn").filter({ hasText: "Mischen" }).first(), 300);
       await page.waitForFunction(() => document.querySelector(".cz-timer.is-ready"), null, { timeout: 25000 }); await sleep(500);
       await check("Würfel gemischt");
+      // Lösung zeigen: Leiste, Phasenübersicht, ein Zug, beenden
+      await tap(page, V(".cz-pill").filter({ hasText: "Lösung zeigen" }).first(), 800); await check("Würfel Lösung");
+      await tap(page, V('button[aria-label="Ein Zug weiter"]').first(), 800); await check("Würfel Lösung Zug");
+      await tap(page, V(".cz-fold").filter({ hasText: "Phasen" }).first(), 400); await check("Würfel Phasen");
+      await tap(page, V('button[aria-label="Wiedergabe beenden"]').first(), 500);
       await tap(page, V('button[aria-label="Züge eingeben"]').first(), 400); await check("Würfel Eingabe");
       await V(".cz-type input").first().fill("R U R'");
       await tap(page, V(".cz-go").first(), 900); await check("Würfel läuft");
@@ -91,7 +97,7 @@ for (const eng of engines) {
       await tap(page, V('button[aria-label="Lernpfad"]').first(), 700); await check("Würfel Lernpfad");
       await tap(page, V(".row").filter({ hasText: "Weiße Ecken" }).first(), 700); await check("Würfel Schritt");
       await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Zeig mir" }).first(), 1000); await check("Würfel Zeig mir");
-      await tap(page, V(".fl-back").first(), 500);
+      await tap(page, V('button[aria-label="Wiedergabe beenden"]').first(), 500);
       await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Üben" }).first(), 1000); await check("Würfel Üben");
       await closeSheet();
       rep.ok((await integrityProblems(page)).length === 0, `${tag}: Daten ungültig`);

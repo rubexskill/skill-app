@@ -6,11 +6,13 @@ import path from "node:path";
 import { buildDist, resultsDir } from "./lib.mjs";
 
 const dist = buildDist();
-const suites = (process.env.SUITES || "scenarios,cube,matrix,monkey").split(",");
+const suites = (process.env.SUITES || "scenarios,cube,cubeplay,matrix,monkey").split(",");
 const limit = Number(process.env.SUITE_TIMEOUT_MIN || 0);
 let failed = false;
 const rows = [];
 for (const s of suites) {
+  fs.rmSync(path.join(resultsDir, `${s}.json`), { force: true }); // nie ein altes Ergebnis lesen, falls die Suite abgebrochen wird
+  fs.mkdirSync(resultsDir, { recursive: true });
   const r = spawnSync("node", [path.join(import.meta.dirname, `${s}.mjs`)], { stdio: "inherit", env: { ...process.env, DIST: dist }, ...(limit ? { timeout: (limit + 1) * 60000 } : {}) });
   if (r.status !== 0) failed = true;
   const f = path.join(resultsDir, `${s}.json`);

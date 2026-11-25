@@ -23,7 +23,8 @@ for (const eng of engines) {
     try { await fn(); await check(name); } catch (e) { await rep.fail(page, `${tag} · ${name}: ${String(e.message).split("\n")[0].slice(0, 240)}`, `${tag}-${name}`); }
   };
   const expect = (cond, msg) => { if (!rep.ok(cond, `${tag} · ${msg}`)) throw new Error(msg); };
-  const neu = async () => { await tap(page, V(".cz-btn").filter({ hasText: "Neu" }).first(), 500); await cubeIdle(page); };
+  // Die Treffer-Tests brauchen drei sichtbare Flächen: nach „Neu“ wird die schräge Ansicht von früher eingestellt (Standard ist jetzt frontal)
+  const neu = async (oblique = true) => { await tap(page, V(".cz-btn").filter({ hasText: "Neu" }).first(), 500); await cubeIdle(page); if (oblique) await page.evaluate(() => window.__cube3d.setView(-35, 30)); };
 
   await openCube(page);
   const webgl = await page.evaluate(() => !!window.__cube3d);
@@ -169,15 +170,15 @@ for (const eng of engines) {
     expect(Math.hypot(after[0] - before[0], after[1] - before[1]) > 25, "Ansicht hat sich nicht gedreht");
     expect(await cubeState(page) === await engineState(page, []), "Ansicht drehen hat den Würfel verändert");
     expect((await userMoves(page)).length === 0, "Ansicht drehen zählt als Zug");
-    // Doppeltippen auf den Hintergrund
-    await page.mouse.click(bx, by); await sleep(90); await page.mouse.click(bx, by);
+    // Doppeltippen auf den Hintergrund: gerade Standardansicht
+    await page.mouse.dblclick(bx, by);
     await sleep(900);
-    const reset = await xy([0, 1, 1], [0, 0, 1]);
-    expect(Math.hypot(reset[0] - before[0], reset[1] - before[1]) < 3, `Standardansicht nicht wiederhergestellt (${Math.round(Math.hypot(reset[0] - before[0], reset[1] - before[1]))} px daneben)`);
+    const cam = await page.evaluate(() => window.__cube3d.camera());
+    expect(Math.abs(cam.yaw + 10) < 0.5 && Math.abs(cam.pitch - 10) < 0.5 && Math.abs(cam.roll) < 0.01, `Standardansicht nicht wiederhergestellt (${JSON.stringify(cam)})`);
     if (eng.name === "chromium") {
       const cdp = await context.newCDPSession(page);
       const spread = async (d0, d1) => {
-        const cx = rect.left + rect.width / 2, cy = by;
+        const cx = rect.left + rect.width / 2, cy = rect.top + 30; // oben: unten rechts sitzt der Knopf „Ansicht zurücksetzen“
         const send = (type, pts) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: pts });
         await send("touchStart", [{ x: cx - d0 / 2, y: cy, id: 1 }, { x: cx + d0 / 2, y: cy, id: 2 }]);
         for (let i = 1; i <= 8; i++) { const d = d0 + ((d1 - d0) * i) / 8; await send("touchMove", [{ x: cx - d / 2, y: cy, id: 1 }, { x: cx + d / 2, y: cy, id: 2 }]); await sleep(16); }
@@ -268,20 +269,29 @@ for (const eng of engines) {
   });
 
   // ---------- Lernpfad ----------
-  await step("Lernpfad: sieben Schritte, „Zeig mir“ spielt den Algorithmus bis gelöst", async () => {
+  await step("Lernpfad: sieben Schritte, „Zeig mir“ spielt den Algorithmus am selben Würfel bis gelöst", async () => {
+    await neu(false);
+    const mainRect = await page.evaluate(() => window.__cube3d.canvasRect());
     await tap(page, V('button[aria-label="Lernpfad"]').first(), 500);
     expect(await V(".row").filter({ hasText: /^\d\./ }).count() === 7, "Lernpfad hat nicht 7 Schritte");
+    const listRect = await page.evaluate(() => window.__cube3d.canvasRect());
+    expect(Math.abs(listRect.width - mainRect.width) < 1.5 && Math.abs(listRect.height - mainRect.height) < 1.5, `Würfel ändert die Größe im Lernpfad (${mainRect.width}×${mainRect.height} → ${listRect.width}×${listRect.height})`);
     await tap(page, V(".row").filter({ hasText: "Weiße Ecken" }).first(), 500);
     await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Zeig mir" }).first(), 900);
-    const start = await cubeState(page);
-    expect(start !== await engineState(page, []), "Der Fall ist schon gelöst");
-    await tap(page, V(".cz-btn").filter({ hasText: "Start" }).first(), 300);
+    const stepRect = await page.evaluate(() => window.__cube3d.canvasRect());
+    expect(Math.abs(stepRect.width - mainRect.width) < 1.5 && Math.abs(stepRect.height - mainRect.height) < 1.5, "Würfel ändert die Größe bei „Zeig mir“");
+    expect(await V(".cz-player").count() === 1, "Wiedergabeleiste fehlt");
+    expect(await cubeState(page) !== await engineState(page, []), "Der Fall ist schon gelöst");
+    await tap(page, V('button[aria-label^="Tempo"]').first(), 100); await tap(page, V('button[aria-label^="Tempo"]').first(), 100); // 4×
+    await tap(page, V('button[aria-label="Abspielen"]').first(), 300);
     await page.waitForFunction(() => { const s = window.__cube3d?.state(); return s && [0, 1, 2, 3, 4, 5].every((f) => new Set(s.slice(f * 9, f * 9 + 9)).size === 1); }, null, { timeout: 30000 });
     await cubeIdle(page);
     expect(await cubeState(page) === await engineState(page, []), "Nach dem Vorspielen ist der Würfel nicht gelöst");
+    await tap(page, V('button[aria-label="Wiedergabe beenden"]').first(), 500);
+    expect(await V(".cz-player").count() === 0, "Wiedergabe läuft nach dem Beenden weiter");
+    expect(await cubeState(page) === await engineState(page, []), "Der Würfel von vorher wurde nicht wiederhergestellt");
   });
   await step("Lernpfad: Üben – der Fall wird mit der Umkehrung aufgebaut, Lösen per Eingabe speichert „kann ich“", async () => {
-    await tap(page, V(".fl-back").first(), 500); // zurück zum Schritt
     await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Üben" }).first(), 900);
     await cubeIdle(page);
     const caseState = await cubeState(page);

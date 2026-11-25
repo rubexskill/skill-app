@@ -131,12 +131,19 @@ jobs:
 
   # ---- Schwere Tests (3D-Würfel, Affentest, WebKit): laufen parallel, melden Fehler, blockieren die Veröffentlichung nicht ----
   e2e-heavy:
+    name: "e2e-heavy (${{ matrix.engine }} · ${{ matrix.suites }})"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        engine: [chromium, webkit]
+        include:
+          - { engine: chromium, suites: "cube" }
+          - { engine: chromium, suites: "cubeplay" }
+          - { engine: chromium, suites: "monkey" }
+          - { engine: webkit, suites: "scenarios,cube" }
+          - { engine: webkit, suites: "cubeplay" }
+          - { engine: webkit, suites: "monkey" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -151,21 +158,21 @@ jobs:
         timeout-minutes: 6
       - name: Würfel-3D-Tests und Affentest (leichte Variante)
         run: npm run test:e2e
-        timeout-minutes: 11
+        timeout-minutes: 12
         env:
           CI: "true"
           LIGHT: "1"
           ENGINES: ${{ matrix.engine }}
-          SUITES: ${{ matrix.engine == 'webkit' && 'scenarios,cube,monkey' || 'cube,monkey' }}
+          SUITES: ${{ matrix.suites }}
           SEEDS: "11"
           ACTIONS: "80"
           QUICK: "1"
-          SUITE_TIMEOUT_MIN: "5"
+          SUITE_TIMEOUT_MIN: "9"
       - name: Ergebnisse bei Fehlern speichern
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: testergebnisse-schwer-${{ matrix.engine }}
+          name: testergebnisse-schwer-${{ matrix.engine }}-${{ strategy.job-index }}
           path: test-results
           if-no-files-found: ignore
           retention-days: 14

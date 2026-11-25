@@ -60,6 +60,10 @@ const ICONS: Record<string, ReactNode> = {
       </g>
     </g>
   ),
+  "skip-start": <g fill="currentColor"><rect x="5" y="5.5" width="2.4" height="13" rx="1.1" /><path d="M19 6.3v11.4a.7.7 0 0 1-1.1.6l-8.2-5.7a.7.7 0 0 1 0-1.2l8.2-5.7a.7.7 0 0 1 1.1.6z" /></g>,
+  "skip-end": <g fill="currentColor"><rect x="16.6" y="5.5" width="2.4" height="13" rx="1.1" /><path d="M5 6.3v11.4a.7.7 0 0 0 1.1.6l8.2-5.7a.7.7 0 0 0 0-1.2L6.1 5.7A.7.7 0 0 0 5 6.3z" /></g>,
+  "step-back": <path d="M14.6 5.8L8.4 12l6.2 6.2" {...S} strokeWidth={2.4} />,
+  "step-forward": <path d="M9.4 5.8l6.2 6.2-6.2 6.2" {...S} strokeWidth={2.4} />,
   play: <path d="M8 5.6v12.8a.8.8 0 0 0 1.2.7l10.3-6.4a.8.8 0 0 0 0-1.4L9.2 4.9A.8.8 0 0 0 8 5.6z" fill="currentColor" />,
   pause: (
     <g fill="currentColor">

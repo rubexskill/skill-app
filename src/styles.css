@@ -1889,7 +1889,8 @@ html:has(.mini.is-shown) .toast { bottom: calc(var(--tabbar-h) + var(--safe-bott
 
 /* ---------------- Zauberwürfel-Trainer ---------------- */
 .cz { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
-.cz.is-history, .cz.is-path, .cz.is-step { padding: 0; }
+.cz.is-history { padding: 0; }
+.cz.is-path > .fl, .cz.is-step > .fl { margin: 0 -16px; }
 .cz-loading, .cube-loading { padding: 60px 20px; text-align: center; color: var(--label-2); }
 .cz-stage { position: relative; height: min(54dvh, 480px); min-height: 250px; margin: 0 -16px; }
 .cz-stage[hidden] { display: none; }
@@ -1901,7 +1902,12 @@ html:has(.mini.is-shown) .toast { bottom: calc(var(--tabbar-h) + var(--safe-bott
 .cz-timer.is-solved .cz-time { color: var(--st-kann); animation: cz-pop 0.5s var(--ease) both; }
 @keyframes cz-pop { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
 .cz-note { min-height: 18px; font-size: 14px; color: var(--label-2); }
-.cz-top { display: flex; justify-content: flex-end; margin: -4px -10px -6px 0; }
+.cz-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px -10px -6px 0; }
+.cz-solve { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cz-pill { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--ink); color: var(--on-ink); font-size: 15px; font-weight: 600; touch-action: manipulation; }
+.cz-pill.is-quiet { background: var(--fill); color: var(--label); padding: 0 14px; }
+.cz-pill:disabled { opacity: 0.45; }
+.cz-viewreset { position: absolute; right: 6px; bottom: 0; display: grid; place-items: center; width: 44px; height: 44px; border: 0; background: none; color: var(--label-2); opacity: 0.7; touch-action: manipulation; }
 .cz-icons { display: flex; gap: 2px; }
 .fl-icon.is-on { background: var(--fill); color: var(--label); }
 .cz-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -1957,10 +1963,31 @@ html:has(.mini.is-shown) .toast { bottom: calc(var(--tabbar-h) + var(--safe-bott
 .cz-net { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 250px; margin: 0 auto 10px; }
 .cz-face { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border-radius: 6px; background: #111; }
 .cz-face i { display: block; aspect-ratio: 1; border-radius: 2px; }
+/* Wiedergabeleiste (Lösung zeigen, Zeig mir) */
+.cz-player { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 8px; border-radius: var(--r-card); background: var(--bg-elevated); }
+.cz-pl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cz-pl-phase { font-family: var(--rounded); font-size: 18px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.cz-pl-x { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin: -6px -8px -6px 0; border: 0; background: none; color: var(--label-2); touch-action: manipulation; }
+.cz-pl-reason { font-size: 13px; color: var(--label-2); }
+.cz-pl-count { font-size: 14px; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.cz-pl-now { display: flex; align-items: center; gap: 12px; min-height: 52px; color: var(--label); }
+.cz-pl-move { font-family: var(--rounded); font-size: 40px; line-height: 1; font-weight: 700; min-width: 2ch; }
+.cz-turn { flex: none; color: var(--label-2); }
+.cz-pl-next { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 18px; font-weight: 600; color: var(--label-3); white-space: nowrap; }
+.cz-pl-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); align-items: center; gap: 4px; }
+.cz-pl-b, .cz-pl-speed { display: grid; place-items: center; min-width: 44px; height: 48px; border: 0; border-radius: 12px; background: var(--fill); color: var(--label); touch-action: manipulation; }
+.cz-pl-b:disabled { opacity: 0.35; }
+.cz-pl-b.is-main { background: var(--ink); color: var(--on-ink); }
+.cz-pl-speed { padding: 0 12px; font-family: var(--rounded); font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.cz-pl-phases { display: flex; flex-direction: column; }
+.cz-pl-ph { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--label-2); font-size: 16px; text-align: left; touch-action: manipulation; }
+.cz-pl-ph span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--fill); font-size: 13px; font-weight: 700; color: var(--label); }
+.cz-pl-ph.is-now { color: var(--label); font-weight: 600; }
+.cz-pl-ph.is-now span { background: var(--ink); color: var(--on-ink); }
 /* Querformat und iPad-Blatt: Würfel links, Bedienung rechts */
 @media (min-width: 700px), (max-height: 520px) and (orientation: landscape) {
-  .cz.is-main, .cz.is-learn { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 16px; align-content: start; }
-  .cz.is-main > .cz-stage, .cz.is-learn > .cz-stage { grid-column: 1; grid-row: 1 / span 8; height: min(100%, 300px); min-height: 220px; margin: 0 0 0 -16px; }
-  .cz.is-main > :not(.cz-stage), .cz.is-learn > :not(.cz-stage) { grid-column: 2; }
+  .cz.is-main, .cz.is-learn, .cz.is-path, .cz.is-step { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 16px; align-content: start; }
+  .cz.is-main > .cz-stage, .cz.is-learn > .cz-stage, .cz.is-path > .cz-stage, .cz.is-step > .cz-stage { grid-column: 1; grid-row: 1 / span 8; height: clamp(190px, calc(100dvh - 170px), 300px); min-height: 190px; margin: 0 0 0 -16px; }
+  .cz.is-main > :not(.cz-stage), .cz.is-learn > :not(.cz-stage), .cz.is-path > :not(.cz-stage), .cz.is-step > :not(.cz-stage) { grid-column: 2; }
   .cz-time { font-size: 36px; line-height: 40px; }
 }
