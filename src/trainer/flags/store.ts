@@ -1,5 +1,6 @@
 // Speicher des Flaggen-Trainers: Lernstand (Dexie), Einstellungen und Zwischenstand (lokal), Lernzeit.
-import { db, uid } from "../../db";
+import { db } from "../../db";
+import { addPracticeTimeFor } from "../practice";
 import { createSkill, loadSetting, saveSetting } from "../../logic";
 import { applyAnswer, DEFAULT_PREFS, parsePrefs, parseRun, type Prefs, type Run, type Stat } from "./logic";
 
@@ -41,20 +42,10 @@ export function clearRun() {
 
 // ---------------- Lernzeit ----------------
 
-/** Sammelt Übungszeit: volle Minuten werden Sessions, der Rest bleibt für später. */
-export function splitMinutes(pendingMs: number, addMs: number): { minutes: number; pending: number } {
-  const total = Math.max(0, pendingMs) + Math.max(0, addMs);
-  const minutes = Math.floor(total / 60000);
-  return { minutes, pending: total - minutes * 60000 };
-}
+export { splitMinutes } from "../practice";
 
 /** Übungszeit des Quiz zählt als normale Lernzeit des Skills. Gibt die neu gespeicherten Minuten zurück. */
-export async function addPracticeTime(skillId: string, addMs: number, now = Date.now()): Promise<number> {
-  const { minutes, pending } = splitMinutes(loadSetting<number>(PENDING_KEY, 0), addMs);
-  saveSetting(PENDING_KEY, pending);
-  if (minutes >= 1) await db.sessions.add({ id: uid(), skillId, start: now - minutes * 60000, minutes });
-  return minutes;
-}
+export const addPracticeTime = (skillId: string, addMs: number, now = Date.now()): Promise<number> => addPracticeTimeFor(PENDING_KEY, skillId, addMs, now);
 
 // ---------------- Skill „Flaggen & Geografie“ ----------------
 

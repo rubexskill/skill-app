@@ -163,7 +163,7 @@ export async function integrityProblems(page) {
   return page.evaluate(async () => {
     const db = window.db; const out = [];
     const all = {};
-    for (const n of ["skills", "sessions", "todos", "lists", "units", "parts", "recordings", "terms", "wishes", "inbox", "apps", "records", "cards", "checks", "flagStats"]) { try { all[n] = await db.table(n).toArray(); } catch { all[n] = []; } }
+    for (const n of ["skills", "sessions", "todos", "lists", "units", "parts", "recordings", "terms", "wishes", "inbox", "apps", "records", "cards", "checks", "flagStats", "cubeTimes", "cubeProgress"]) { try { all[n] = await db.table(n).toArray(); } catch { all[n] = []; } }
     const ids = (n) => new Set(all[n].map((x) => x.id));
     for (const [n, rows] of Object.entries(all)) {
       const seen = new Set();
@@ -181,6 +181,9 @@ export async function integrityProblems(page) {
     for (const r of all.recordings) { if (!units.has(r.unitId)) out.push(`Aufnahme ${r.id}: Stück fehlt`); if (r.partId && !parts.has(r.partId)) out.push(`Aufnahme ${r.id}: Abschnitt fehlt`); }
     const FD = window.app.flags.data;
     for (const f of all.flagStats) { if (!FD.BY_ISO.has(f.id)) out.push(`Lernstand ${f.id}: unbekannte Flagge`); if (!(f.level >= 0 && f.level <= 4)) out.push(`Lernstand ${f.id}: Stufe ${f.level}`); if (f.right + f.wrong !== f.seen) out.push(`Lernstand ${f.id}: Zähler passen nicht`); }
+    for (const t of all.cubeTimes) { if (!(t.ms >= 0)) out.push(`Würfelzeit ${t.id}: ${t.ms}`); if (typeof t.scramble !== "string") out.push(`Würfelzeit ${t.id}: Mischung fehlt`); }
+    const AL = new Set(window.app.cube.path.ALGOS.map((a) => a.id));
+    for (const p of all.cubeProgress) { if (!AL.has(p.id)) out.push(`Lernpfad ${p.id}: unbekannter Algorithmus`); if (p.state !== "kann" && p.state !== "ueben") out.push(`Lernpfad ${p.id}: Stand ${p.state}`); }
     const clipIds = new Set(all.parts.flatMap((p) => (p.clips ?? []).map((c) => c.id))); const recIds = ids("recordings");
     for (const k of await db.clipBlobs.toCollection().primaryKeys()) if (!clipIds.has(k)) out.push(`Video ${k}: Clip fehlt`);
     for (const k of await db.recBlobs.toCollection().primaryKeys()) if (!recIds.has(k)) out.push(`Audio ${k}: Aufnahme fehlt`);
@@ -192,7 +195,7 @@ export async function integrityProblems(page) {
 /** Sicherungsrelevanter Datenbestand als vergleichbarer Text (ohne Änderungszeiten). */
 export async function snapshot(page) {
   return page.evaluate(async () => {
-    const names = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats"];
+    const names = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats", "cubeTimes", "cubeProgress"];
     const strip = (v) => Array.isArray(v) ? v.map(strip) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).filter((k) => k !== "upd").sort().map((k) => [k, strip(v[k])])) : v;
     const out = {};
     for (const n of names) out[n] = (await window.db.table(n).toArray()).map(strip).sort((a, b) => String(a.id ?? JSON.stringify(a)).localeCompare(String(b.id ?? JSON.stringify(b))));
@@ -323,8 +326,69 @@ export async function flagAnswer(page, right, { next = true } = {}) {
     return { iso, correct, n: buttons.length, dir: flags ? "country" : "flag" };
   });
   if (info.correct < 0) throw new Error("richtige Antwort nicht gefunden: " + info.iso);
+  if (typeof right === "function") right = right(info);
   const idx = right ? info.correct : (info.correct === 0 ? 1 : 0);
   await tap(page, page.locator(".fl-ans").nth(idx), right ? 150 : 500);
   if (!right) { if (next) await tap(page, page.locator(".fl-next"), 250); } else await sleep(800);
   return info;
+}
+
+// ---------------- Zauberwürfel-Trainer ----------------
+
+export async function openCube(page) {
+  if (await page.locator(".tabbar").count()) await tabTap(page, "Übersicht");
+  await tap(page, page.locator('text="Zauberwürfel" >> visible=true').first(), 900);
+  await tap(page, page.locator(".trainer-btn:visible").first(), 1200);
+  await page.waitForFunction(() => window.__cube3d || document.querySelector(".cz-net"), null, { timeout: 15000 });
+  await sleep(500);
+}
+export const closeSheet = async (page) => tap(page, page.locator(".sheet-bar button, .sheet-head button", { hasText: "Schließen" }).locator("visible=true").first(), 700);
+export const cubeState = (page) => page.evaluate(() => window.__cube3d?.state() ?? null);
+export const cubeIdle = (page) => page.waitForFunction(() => window.__cube3d && !window.__cube3d.busy(), null, { timeout: 15000 }).then(() => sleep(120));
+/** Moves, die die Oberfläche unter „Deine Züge“ zeigt */
+export const userMoves = (page) => page.evaluate(() => [...document.querySelectorAll(".cz-notation .cz-nbody .cz-moves:not(.is-dim) .cz-move")].map((b) => b.textContent));
+export const scrambleMoves = (page) => page.evaluate(() => [...document.querySelectorAll(".cz-notation .cz-nbody .cz-moves.is-dim .cz-move")].map((b) => b.textContent));
+/** Zustand, den die Engine für Züge ab gelöstem Würfel ergibt */
+export const engineState = (page, moves) => page.evaluate((m) => { const E = window.app.cube.engine; return E.cubeToString(E.applyMoves(E.solvedCube(), m)); }, moves);
+
+/** Ziehen mit der Maus (Pointer-Ereignisse) von (x,y) um (dx,dy), in `steps` Schritten */
+export async function dragMouse(page, x, y, dx, dy, { steps = 14, wait = 18, hold = 0 } = {}) {
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= steps; i++) { await page.mouse.move(x + (dx * i) / steps, y + (dy * i) / steps); if (wait) await sleep(wait); }
+  if (hold) await sleep(hold);
+  await page.mouse.up();
+}
+
+/** Würfel-Trainer: Zeichenfläche sinnvoll groß und im Blatt, Bedienelemente erreichbar und groß genug, Zeit lesbar */
+export async function cubeProblems(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && !e.closest("[aria-hidden='true']:not(.sheet-layer)"); };
+    const root = document.querySelector(".cz");
+    if (!root || !vis(root)) return out;
+    const vw = innerWidth, vh = innerHeight;
+    const host = root.querySelector(".cube3d");
+    if (host && vis(host)) {
+      const r = host.getBoundingClientRect();
+      if (r.width < Math.min(280, vw * 0.6) || r.height < Math.min(200, vh * 0.28)) out.push(`Würfel zu klein (${Math.round(r.width)}×${Math.round(r.height)})`);
+      if (r.left < -1 || r.right > vw + 1) out.push("Würfelfläche ragt seitlich heraus");
+      const c = host.querySelector("canvas");
+      if (c && (Math.abs(c.getBoundingClientRect().width - r.width) > 2)) out.push("Zeichenfläche passt nicht zum Rahmen");
+    }
+    for (const b of root.querySelectorAll("button, input")) {
+      if (!vis(b)) continue;
+      if (b.closest(".cz-moves")) continue; // Notationsmarken sind klein, aber gruppiert (≥ 40 px breit)
+      const r = b.getBoundingClientRect();
+      if (r.height < 43.5 || r.width < 43.5) out.push(`Tippfläche zu klein: ${b.getAttribute("aria-label") || b.textContent?.trim().slice(0, 20)} ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+    for (const b of root.querySelectorAll(".cz-move")) {
+      if (!vis(b)) continue;
+      const r = b.getBoundingClientRect();
+      if (r.height < 36 || r.width < 36) out.push(`Notationsmarke zu klein ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+    const t = root.querySelector(".cz-time");
+    if (t && vis(t) && parseFloat(getComputedStyle(t).fontSize) < 32) out.push("Zeitanzeige zu klein");
+    return out;
+  });
 }

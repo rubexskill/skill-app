@@ -400,6 +400,8 @@ export async function exportBackup(): Promise<Blob> {
     parts: await db.parts.toArray(),
     recordings: await db.recordings.toArray(),
     flagStats: await db.flagStats.toArray(),
+    cubeTimes: await db.cubeTimes.toArray(),
+    cubeProgress: await db.cubeProgress.toArray(),
     tombs: await db.tombs.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -447,6 +449,8 @@ type Backup = {
   parts?: unknown[];
   recordings?: unknown[];
   flagStats?: unknown[];
+  cubeTimes?: unknown[];
+  cubeProgress?: unknown[];
   tombs?: unknown[];
   exportedAt: string;
 };
@@ -459,7 +463,7 @@ export async function readBackup(file: File): Promise<Backup> {
 
 /** Ersetzt alle Daten. Backups aus Version 1 werden um die neuen Felder ergänzt. */
 export async function restoreBackup(data: Backup) {
-  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.units, db.parts, db.recordings, db.flagStats, db.tombs];
+  const tables = [db.skills, db.sessions, db.inbox, db.checks, db.apps, db.todos, db.lists, db.records, db.terms, db.wishes, db.cards, db.units, db.parts, db.recordings, db.flagStats, db.cubeTimes, db.cubeProgress, db.tombs];
   // Fehlende Änderungszeit (alte Backups) aus dem Datum der Zeile schätzen
   const fix = <T,>(rows: unknown[] | undefined): T[] =>
     ((rows ?? []) as Record<string, number | undefined>[]).map((r) => (r.upd == null ? { ...r, upd: r.updatedAt ?? r.createdAt ?? r.start ?? r.at ?? 0 } : r)) as unknown as T[];
@@ -481,6 +485,8 @@ export async function restoreBackup(data: Backup) {
       await db.parts.bulkAdd(fix(data.parts));
       await db.recordings.bulkAdd(fix(data.recordings));
       await db.flagStats.bulkAdd(fix(data.flagStats));
+      await db.cubeTimes.bulkAdd(fix(data.cubeTimes));
+      await db.cubeProgress.bulkAdd(fix(data.cubeProgress));
       await db.tombs.bulkAdd((data.tombs ?? []) as never[]);
     }),
   );

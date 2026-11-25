@@ -13,6 +13,7 @@ const WORDS = ["Klavier", "Übung", "ÄÖÜ ß", "a", "   ", "<b>fett</b>", "�
 let totalActions = 0;
 const kinds = {};
 let flagSteps = 0;
+let cubeSteps = 0;
 const kindOf = (w) => (/^tippe Text/.test(w) ? "Text" : /^tippe/.test(w) ? "Tippen" : /^wische/.test(w) ? "Wischen" : /^scrolle/.test(w) ? "Scrollen" : /^Tab/.test(w) ? "Tab" : /^zurück/.test(w) ? "Zurück" : /^drehe/.test(w) ? "Drehen" : /^Darstellung/.test(w) ? "Hell/Dunkel" : /^(keine|kein)/.test(w) ? "ohne Ziel" : /^Aktion scheiterte/.test(w) ? "gescheitert" : "Sonstiges");
 
 for (const eng of engines) for (const seed of seeds) {
@@ -57,6 +58,25 @@ for (const eng of engines) for (const seed of seeds) {
       await page.locator(".trainer-btn:visible").first().tap({ timeout: 2000 }).catch(() => {}); await sleep(700);
       return "öffne Flaggen-Trainer";
     }
+    if (r.chance(0.04) && !(await page.locator(".cz").count())) {
+      await page.keyboard.press("Escape"); await sleep(300);
+      await page.locator(".tabbar").getByText("Übersicht", { exact: true }).first().tap({ timeout: 2000 }).catch(() => {}); await sleep(500);
+      await page.locator('text="Zauberwürfel" >> visible=true').first().tap({ timeout: 2000 }).catch(() => {}); await sleep(800);
+      await page.locator(".trainer-btn:visible").first().tap({ timeout: 2000 }).catch(() => {}); await sleep(900);
+      return "öffne Würfel-Trainer";
+    }
+    // im Würfel-Trainer gelegentlich am Würfel ziehen (auf dem Würfel, am Rand, ins Leere)
+    if (r.chance(0.3) && (await page.locator(".cube3d").count())) {
+      const b = await page.locator(".cube3d").first().boundingBox();
+      if (b) {
+        const px = () => b.x + 4 + r.next() * (b.width - 8), py = () => b.y + 4 + r.next() * (b.height - 8);
+        await page.mouse.move(px(), py()); await page.mouse.down();
+        const x1 = px(), y1 = py();
+        for (let k = 1; k <= 6; k++) { await page.mouse.move(x1 * k / 6 + (b.x + b.width / 2) * (1 - k / 6), y1 * k / 6 + (b.y + b.height / 2) * (1 - k / 6)); }
+        await page.mouse.up(); await sleep(250);
+        return "ziehe am Würfel";
+      }
+    }
     const roll = r.next();
     if (roll < 0.52) {
       const c = await candidates(); if (!c.length) return "keine Ziele";
@@ -97,6 +117,7 @@ for (const eng of engines) for (const seed of seeds) {
       const alive = await page.evaluate(() => !!window.db && !!document.querySelector(".tabbar"));
       if (!alive) probs.push("App nicht mehr bedienbar (Tab-Leiste/Datenbank fehlt)");
       if (await page.locator(".fl").count()) flagSteps++;
+      if (await page.locator(".cz").count()) cubeSteps++;
       probs.push(...(await layoutProblems(page)), ...(await flagProblems(page)));
       if (i % 10 === 0) probs.push(...(await integrityProblems(page)));
     } catch (e) { probs.push(`Prüfung scheiterte: ${String(e.message).split("\n")[0].slice(0, 100)}`); }
@@ -109,6 +130,6 @@ for (const eng of engines) for (const seed of seeds) {
   await context.close();
 }
 for (const e of engines) await e.browser.close();
-const res = rep.finish({ engines: engines.map((e) => e.name), seeds, actionsTotal: totalActions, kinds, flagSteps, notes });
-console.log("Aktionen nach Art:", JSON.stringify(kinds), "· Schritte im Flaggen-Trainer:", flagSteps);
+const res = rep.finish({ engines: engines.map((e) => e.name), seeds, actionsTotal: totalActions, kinds, flagSteps, cubeSteps, notes });
+console.log("Aktionen nach Art:", JSON.stringify(kinds), "· Schritte im Flaggen-Trainer:", flagSteps, "· im Würfel-Trainer:", cubeSteps);
 process.exit(res.failures.length ? 1 : 0);

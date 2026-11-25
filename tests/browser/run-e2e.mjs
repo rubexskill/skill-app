@@ -6,7 +6,7 @@ import path from "node:path";
 import { buildDist, resultsDir } from "./lib.mjs";
 
 const dist = buildDist();
-const suites = ["scenarios", "matrix", "monkey"];
+const suites = ["scenarios", "cube", "matrix", "monkey"];
 let failed = false;
 const rows = [];
 for (const s of suites) {

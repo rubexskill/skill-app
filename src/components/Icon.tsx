@@ -139,6 +139,30 @@ const ICONS: Record<string, ReactNode> = {
       <circle cx="9" cy="16" r="2" />
     </g>
   ),
+  clock: (
+    <g {...S}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </g>
+  ),
+  book: (
+    <g {...S}>
+      <path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z" />
+      <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 8h6" />
+    </g>
+  ),
+  keyboard: (
+    <g {...S}>
+      <rect x="3.5" y="6.5" width="17" height="11" rx="2.5" />
+      <path d="M7 10.5h.01M10 10.5h.01M13 10.5h.01M16.5 10.5h.01M8 14h8" />
+    </g>
+  ),
+  shuffle: (
+    <g {...S}>
+      <path d="M4 7h3.5c3 0 4 2 5 5s2 5 5 5H20M4 17h3.5c1.5 0 2.5-.7 3.3-1.8M20 7h-2.5c-1.5 0-2.5.7-3.3 1.8" />
+      <path d="M17.5 4.5L20 7l-2.5 2.5M17.5 14.5L20 17l-2.5 2.5" />
+    </g>
+  ),
   apps: (
     <g {...S}>
       <rect x="4" y="4" width="7" height="7" rx="2" />

@@ -1,18 +1,19 @@
 # Testbericht – Selbsttests der App
 
-Stand: 25.11.2026 (nach dem Flaggen-Trainer). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
+Stand: 25.11.2026 (nach dem Zauberwürfel-Trainer). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
 
 ## Was getestet wird
 
 | Ebene | Wo | Fälle |
 |---|---|---:|
-| Einheitentests (Logik, Daten, Migration, Abgleich, Flaggen-Trainer) | `tests/*.test.ts`, Vitest | 302 |
+| Einheitentests (Logik, Daten, Migration, Abgleich, Flaggen-Trainer) | `tests/*.test.ts`, Vitest | 353 |
 | Überlauf und Layout (375/390/430 px, hell/dunkel) und Fehler-Tests zu gemeldeten Fehlern | `tests/browser/overflow.mjs`, `bugs.mjs` | laufen als eine Suite, Ergebnis ja/nein |
 | **Szenarien** (echte Abläufe per Touch und Eingabe) | `tests/browser/scenarios.mjs` | 253 |
-| **Layout-Matrix** (alle Hauptseiten und alle Flaggen-Ansichten, siehe unten) | `tests/browser/matrix.mjs` | 1224 |
+| **Würfel-Trainer** (Ziehen, Zeitnahme, Lernpfad, Aufräumen, beide Motoren) | `tests/browser/cube.mjs` | 490 |
+| **Layout-Matrix** (alle Hauptseiten und alle Flaggen-Ansichten, siehe unten) | `tests/browser/matrix.mjs` | 1704 |
 | **Affentest** (zufällig, festes Startwert) | `tests/browser/monkey.mjs` | 1800 (6 Läufe × 300 Aktionen, davon 403 Schritte im Flaggen-Trainer) |
 
-Gesamt der Selbsttests: **3277 Fälle, 0 Fehler** im letzten Lauf.
+Gesamt der Selbsttests: **4226 Fälle** im letzten vollständigen Lauf (Szenarien 232, Würfel 490, Matrix 1704, Affentest 1800); die vier Fehler dieses Laufs waren ein unscharfer Flaggen-Test (siehe „Gefunden und behoben“) und sind behoben, die Szenarien liefen danach in beiden Motoren mit 0 Fehlern erneut.
 
 ### Motoren und Größen
 - Chromium **und** WebKit (die Safari-Engine). WebKit läuft hier lokal, nachdem die Systembibliotheken nachinstalliert wurden. Ist WebKit nicht startbar, meldet der Lauf das offen und nutzt Chromium mit iPhone-Emulation.
@@ -28,6 +29,13 @@ Skill anlegen · Status ändern · Notiz und Link speichern · Session hinzufüg
 - **Affentest**: öffnet den Trainer gezielt zwischendurch; 403 der 1800 Schritte liefen innerhalb des Flaggen-Trainers.
 - **Größe:** Die App wuchs von 1,85 MB auf 3,28 MB (+1,43 MB, davon 1,39 MB Flaggen; JavaScript +17 KB, CSS +6 KB). Die Flaggen sind im Service-Worker-Cache (offline) und komprimiert etwa 0,42 MB schwer.
 
+### Zauberwürfel-Trainer
+- **Einheitentests** (`tests/cube.test.ts`, `cubelogic.test.ts`, `cubedb.test.ts`, 51 neue Tests): jeder der 18 Züge viermal = Ausgangszustand, Zug + Umkehrung = gelöst, Mischung + Umkehrung = gelöst, (R U R' U')×6 = gelöst, gelöst auch bei gedrehter Lage, Notation (Leerzeichen, Sonderfälle), Mischung (25 Züge, nie dieselbe Fläche hintereinander, nie R L R), Zieh-Mathematik (Achse, Richtung, Einrasten), Bestzeit/Ao5/Ao12, Lernpfad (jeder Algorithmus löst seinen Fall), Dexie-Migration auf Version 11 ohne Datenverlust, Backup→Import, Abgleich.
+- **`cube.mjs`** (beide Motoren, geprüft wird der Würfelzustand, nicht Pixel): Ziehen auf jedem sichtbaren Aufkleber in beide Richtungen ergibt genau die erwartete Schicht (Chromium und WebKit); kurzes Ziehen rastet zurück, Flick, 180°, zweite Geste während des Einrastens, Ansicht drehen, Doppeltippen, Pinch (Chromium); Mischen, Zug-Eingabe mit Fehlermeldung, Zurück, Zeit starten/stoppen/speichern, Verlauf, Ao5, Löschen mit Rückgängig, Notation antippen, Lernpfad „Zeig mir“ und „Üben“ mit gespeichertem Fortschritt; **Leck-Test**: achtmal öffnen/schließen, angelegte = aufgeräumte Szenen, keine Listener, keine Zeichenschleife im Ruhezustand.
+- **Matrix** zusätzlich: Würfel Start, gemischt, Eingabe, läuft, Ende, Zeiten, Lernpfad, Schritt, Zeig mir, Üben in allen 12 Kombinationen je Motor; `cubeProblems` prüft Würfelgröße, Tippflächen ≥ 44 px und Zeitanzeige. **Affentest** öffnet den Würfel gezielt und zieht zufällig am Würfel.
+- **Größe:** Der Würfel-Code samt three.js liegt in einem eigenen Chunk (≈ 606 KB, ≈ 155 KB komprimiert), der erst beim Öffnen des Trainers geladen wird; das Haupt-JavaScript wuchs nur um ≈ 3,5 KB. Im Service-Worker-Cache (offline) liegt der Chunk mit.
+- Ein automatischer Löser wurde bewusst nicht gebaut.
+
 Nach jedem Schritt wird geprüft: Layout (nichts seitlich verschoben oder außerhalb, nichts überlappt, Tippflächen und Tab-Leiste erreichbar), keine Konsolenfehler, Datenintegrität (Verweise, Zahlen, Formate, keine verwaisten Dateien).
 
 ### Affentest
@@ -39,6 +47,10 @@ Tippt, wischt, scrollt, gibt Text ein (Umlaute, Emoji, 120 Zeichen, HTML, „DRO
 `.github/workflows/deploy.yml` hat einen eigenen Job `e2e`. Er installiert Chromium und WebKit, führt `npm run test:browser` und `npm run test:e2e` aus (Affentest mit Startwerten 11, 22, 33 à 300 Aktionen). Der Job `deploy` wartet auf `build` **und** `e2e` – schlägt ein Test fehl, wird nicht veröffentlicht. Bei Fehlern lädt der Job den Ordner `test-results` (Screenshots, JSON, Zusammenfassung) als Artefakt „testergebnisse“ hoch.
 
 ## Gefunden und behoben
+0. **Würfel: Seite hängt nach „gelöst“.** In der Frame-Funktion rief die Trägheit `request()` auf und am Ende wurde zusätzlich `requestAnimationFrame` geplant: jede Runde verdoppelte die Rückrufe, die Seite fror ein. Gefunden vom Würfel-Test (alle Folgeschritte liefen in Zeitüberschreitung). Behoben (nur eine geplante Runde); der Ruhezustandstest prüft, dass nach dem Auslaufen nicht mehr gezeichnet wird.
+0. **Würfel: Faltzeilen („Notation“, „Tipp zeigen“) und Notationsmarken kleiner als 44 px**, gefunden von der Matrix (`cubeProblems`). Behoben.
+0. **Würfel: Flick bei kurzer Berührung ignoriert.** Die Geschwindigkeit brauchte zwei Messpunkte im Ziehmodus; jetzt zählt der Berührungsbeginn mit. Das Zeitfenster für den Schwung wurde auf 140 ms erweitert, der Schwung-Faktor auf 0,1 gesenkt (schnelles Ziehen über 70° ergab sonst schon 180°).
+0. **Testwerkzeug:** Das Flaggen-Szenario entschied nach Position, welche Fragen falsch beantwortet werden; kam eine Wiederholung auf eine „falsche“ Position, ergab das 80 % statt 70 %. Jetzt entscheidet die Flagge (3., 6. und 8. neue Flagge falsch).
 0. **Flaggen-Trainer im Querformat (iPhone):** Frage und Antworten lagen untereinander, „Weiter“ war nur durch Scrollen erreichbar; lange Namen brachen mitten im Wort. Behoben: Flagge links, Antworten rechts, Hinweis kompakt, Silbentrennung. Gefunden durch die Matrix in den Querformat-Kombinationen (zunächst auch durch einen Fehler im Testwerkzeug, das im Blatt nicht scrollte).
 1. **Hinweis überdeckt den Mini-Timer.** Läuft ein Timer, schwebt der Mini-Timer über der Tab-Leiste; ein Hinweis („… geschafft“, Rückgängig) lag genau darauf. Gefunden vom Affentest. Behoben: Hinweise sitzen jetzt oberhalb des Mini-Timers (`html:has(.mini.is-shown) .toast`). Eigener Test: `bugs.mjs` Fall 3b (schlug vor dem Fix fehl, danach grün).
 
@@ -56,4 +68,5 @@ Am Testwerkzeug selbst (nicht an der App) wurden Fehlalarme beseitigt: Seiten in
 - Finger-Trägheit, Wischgefühl, Gummiband-Scrollen, Tastaturverhalten beim Tippen in Eingabefelder.
 - Mikrofon-Zugriff, Aufnahme, Audio-Sitzung, Lautstärke und Stummschalter beim Metronom.
 - Safari-Eigenarten: Statusleiste und Notch, `100dvh` bei ein- und ausfahrender Leiste, Drehen im Vollbild-Player, Standbild-Erzeugung und Wiedergabe von iPhone-Videos (HEVC/MOV), Tonhöhe bei langsamem Tempo, Bildauswahl aus der Mediathek, Teilen-Menü für Backups, Installation als Web-App.
+- **Würfel:** Fingergefühl beim Reihendrehen (Schwellwert, Einrasten, Schwung), Flüssigkeit (60 fps) auf älteren iPhones mit echter GPU, Licht und Optik von Glanz und Schatten auf dem OLED-Display, Verhalten des WebGL-Kontexts bei Wechsel in den Hintergrund. Die Tests laufen mit Software-Rendering.
 - Echter Speicher (Kontingent, Löschen durch iOS nach Inaktivität).

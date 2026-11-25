@@ -3,6 +3,7 @@ import { buildSeed, defaultLists, withDefaults } from "./seed";
 import { backfillUnsorted } from "./backfill";
 import { moveToFirstUnit } from "./unitsMigrate";
 import type { Stat as FlagStat } from "./trainer/flags/logic";
+import type { CubeProgress, CubeTime } from "./trainer/cube/types";
 
 // Interne Schlüssel bleiben wie in Version 1 (Backups bleiben kompatibel), die Anzeige ist neu.
 export type Status = "rausfinden" | "idee" | "lerne" | "kann";
@@ -337,7 +338,7 @@ export interface ClipBlob {
   blob: Blob;
 }
 
-export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats"] as const;
+export const SYNC_TABLES = ["skills", "sessions", "inbox", "checks", "apps", "todos", "lists", "records", "terms", "wishes", "cards", "units", "parts", "recordings", "flagStats", "cubeTimes", "cubeProgress"] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 let hooksOff = false;
@@ -368,6 +369,10 @@ export class SkillDB extends Dexie {
   recordings!: EntityTable<Recording, "id">;
   /** Lernstand des Flaggen-Trainers (id = ISO-Code); gehört ins Backup und in den Abgleich */
   flagStats!: EntityTable<FlagStat, "id">;
+  /** Zeiten des Zauberwürfel-Trainers (Backup, Abgleich) */
+  cubeTimes!: EntityTable<CubeTime, "id">;
+  /** Lernpfad: pro Algorithmus „kann ich“ oder „noch üben“ (Backup, Abgleich) */
+  cubeProgress!: EntityTable<CubeProgress, "id">;
   recBlobs!: EntityTable<ClipBlob, "id">;
   covers!: EntityTable<ClipBlob, "id">;
   clipBlobs!: EntityTable<ClipBlob, "id">;
@@ -458,6 +463,9 @@ export class SkillDB extends Dexie {
 
     // Version 10: Lernstand des Flaggen-Trainers (neue Tabelle, vorhandene Daten bleiben unberührt).
     this.version(10).stores({ flagStats: "id" });
+
+    // Version 11: Zeiten und Lernpfad-Fortschritt des Zauberwürfel-Trainers (neue Tabellen, vorhandene Daten bleiben unberührt).
+    this.version(11).stores({ cubeTimes: "id, at", cubeProgress: "id" });
 
     // Änderungszeit setzen und Löschungen vermerken – automatisch für alle abgleichbaren Tabellen.
     for (const name of SYNC_TABLES) {

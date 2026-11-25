@@ -257,14 +257,15 @@ for (const eng of engines) {
   });
   await step("Flaggen: Quiz mit 10 Fragen (7 richtig, 3 falsch), Ergebnis, Fehler wiederholen", async () => {
     await tap(page, V(".fl-go").first(), 700);
-    const plan = [true, true, false, true, true, false, true, false, true, true];
-    // die ersten zehn Fragen nach Plan; falsche Flaggen kommen im selben Durchgang wieder (dann richtig beantwortet)
+    // Nach Flagge, nicht nach Position: die 3., 6. und 8. neue Flagge wird falsch beantwortet, Wiederholungen (kommen im selben Durchgang wieder) richtig
+    const seen = new Set();
+    const decide = (info) => { if (seen.has(info.iso)) return true; seen.add(info.iso); return ![3, 6, 8].includes(seen.size); };
     for (let i = 0; i < 40; i++) {
       await flagReady(page);
       if (await V(".fl-score").count()) break;
       const w = await page.locator(".fl-bar i").first().evaluate((e) => parseFloat(e.style.width));
       expect(w >= 0 && w <= 100, "Fortschrittsbalken außerhalb 0–100 %");
-      await flagAnswer(page, i < plan.length ? plan[i] : true);
+      await flagAnswer(page, decide);
     }
     await page.waitForSelector(".fl-score", { timeout: 8000 });
     expect(/70/.test(await V(".fl-score").first().textContent()), "Ergebnis ist nicht 70 %");

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid, type Skill } from "../db";
 import { minutesLabel, saveRecord } from "../logic";
@@ -9,9 +9,11 @@ import { allCategoryColors, categoryStyle } from "../categories";
 import { BreathTrainer, CardsReview, StopwatchTrainer } from "./Body";
 import { MathTrainer, MorseTrainer, WeekdayTrainer } from "./Quiz";
 import { FlagsTrainer } from "./flags/FlagsTrainer";
+// Der Würfel-Trainer (mit three.js) wird erst beim Öffnen geladen.
+const CubeTrainer = lazy(() => import("./cube/CubeTrainer"));
 import type { TrainerResult } from "./shared";
 
-export type TrainerKind = "math" | "weekday" | "morse" | "flags" | "breath" | "stopwatch" | "cards";
+export type TrainerKind = "math" | "weekday" | "morse" | "flags" | "cube" | "breath" | "stopwatch" | "cards";
 
 export interface TrainerOption {
   kind: TrainerKind;
@@ -29,6 +31,7 @@ export function builtInTrainer(skill: Pick<Skill, "title" | "metric">): TrainerO
   if (t === "Wochentag berechnen") return { kind: "weekday", label: "Wochentag-Training", hint: "Zufallsdaten, Wochentag antippen" };
   if (t === "Morsecode") return { kind: "morse", label: "Morse-Training", hint: "Zeichen und Wörter sehen oder hören" };
   if (t === "Flaggen & Geografie") return { kind: "flags", label: "Flaggen-Trainer", hint: "195 Flaggen, Hauptstädte, Lernstand" };
+  if (t === "Zauberwürfel") return { kind: "cube", label: "Würfel-Trainer", hint: "3D-Würfel, Zeiten, Lernpfad" };
   if (BREATH.includes(t)) return { kind: "breath", label: "Atemübung", hint: "Ruhiger Kreis mit Phasen" };
   if (skill.metric?.unit.trim() === "s") return { kind: "stopwatch", label: "Stoppuhr", hint: "Mit Bestzeit als Rekord" };
   return null;
@@ -92,6 +95,7 @@ export function TrainerSheet({ open, onClose, skill, initial }: { open: boolean;
         {kind === "weekday" && <WeekdayTrainer {...props} />}
         {kind === "morse" && <MorseTrainer {...props} />}
         {kind === "flags" && <FlagsTrainer {...props} />}
+        {kind === "cube" && <Suspense fallback={<div className="cube-loading">Würfel wird geladen …</div>}><CubeTrainer {...props} /></Suspense>}
         {kind === "breath" && <BreathTrainer {...props} />}
         {kind === "stopwatch" && <StopwatchTrainer {...props} />}
         {kind === "cards" && <CardsReview {...props} />}
