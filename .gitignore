@@ -17,3 +17,4 @@ Thumbs.db
 design-vorschau/
 src/preview/
 *.tsbuildinfo
+test-results/

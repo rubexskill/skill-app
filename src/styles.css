@@ -1798,3 +1798,6 @@ input::selection, textarea::selection, .note-text::selection, .note-text *::sele
 
 /* ---- Eingabesperre nach dem Schließen des Players: nur die Seite dahinter, hebt sich immer auf ---- */
 html[data-input-lock] #root { pointer-events: none; }
+
+/* Läuft ein Timer, schwebt der Mini-Timer über der Tab-Leiste: Hinweise liegen darüber, nie darauf */
+html:has(.mini.is-shown) .toast { bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 76px); }

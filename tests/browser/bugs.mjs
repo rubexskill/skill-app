@@ -155,6 +155,17 @@ async function uiTests() {
     const gone = await page.evaluate(() => document.querySelectorAll(".toast.is-shown").length);
     if (gone) failures.push("3 · Hinweis verschwindet nicht nach 4 s");
   }
+  // 3b) Läuft ein Timer, schwebt der Mini-Timer über der Tab-Leiste: der Hinweis darf ihn nicht überdecken (Affentest-Fund)
+  if (wants("3")) {
+    await page.evaluate(async () => { const s = await window.app.logic.createSkill({ name: "Timerskill", kategorie: "Körper & Sport", typ: "skill", status: "lerne" }); await window.app.logic.startTimer(s.id); });
+    await page.waitForSelector(".mini.is-shown", { timeout: 4000 }).catch(() => {});
+    await page.evaluate(() => window.__toast("„Skill 2“ geschafft", { label: "Rückgängig", run() {} }));
+    await page.waitForTimeout(800);
+    const o = await page.evaluate(() => { const t = document.querySelector(".toast.is-shown")?.getBoundingClientRect(); const m = document.querySelector(".mini.is-shown .mini-inner")?.getBoundingClientRect(); return t && m ? { overlap: Math.min(t.bottom, m.bottom) - Math.max(t.top, m.top) > 2, t: [t.top, t.bottom], m: [m.top, m.bottom] } : { missing: !!t + "/" + !!m }; });
+    if (o.missing || o.overlap) failures.push(`3b · Hinweis überdeckt den Mini-Timer: ${JSON.stringify(o)}`);
+    await page.evaluate(async () => { const s = await window.db.skills.filter((x) => x.timerStart != null).first(); if (s) await window.app.logic.stopTimer(s.id); });
+    await page.waitForTimeout(500);
+  }
   // 4) Keine blaue Textauswahl außer in Eingabefeldern und Notiz-Texten
   if (wants("4")) {
     const res = await page.evaluate(() => {
