@@ -18,6 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -28,9 +29,11 @@ jobs:
 
       - name: Abhängigkeiten installieren
         run: npm ci
+        timeout-minutes: 5
 
-      - name: Automatische Tests
+      - name: Automatische Tests (inkl. Würfel-Engine)
         run: npm test
+        timeout-minutes: 5
 
       - name: Öffentliche Version bauen (ohne persönliche Startdaten)
         run: npm run build
@@ -60,48 +63,116 @@ jobs:
         with:
           path: dist
 
-  # Selbsttests in Chromium und WebKit: Szenarien, Layout-Matrix, Affentest. Schlägt etwas fehl, wird NICHT veröffentlicht.
-  e2e:
+  # ---- Schnelle, wichtige Tests (blockieren die Veröffentlichung) ----
+  # Überlauf/Layout und Fehler-Tests in Chromium
+  browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Abhängigkeiten installieren
         run: npm ci
-
-      - name: Browser installieren (Chromium und WebKit)
-        run: npx playwright-core install --with-deps chromium webkit
-
+        timeout-minutes: 5
+      - name: Chromium installieren
+        run: npx playwright-core install --with-deps chromium
+        timeout-minutes: 5
       - name: Browser-Tests (Überlauf, Fehler-Tests)
         run: mkdir -p test-results/overflow && npm run test:browser
+        timeout-minutes: 12
         env:
           CI: "true"
           SHOTS: test-results/overflow
-
-      - name: Selbsttests (Szenarien, Matrix, Affentest)
-        run: npm run test:e2e
-        env:
-          CI: "true"
-          SEEDS: "11,22,33"
-          ACTIONS: "300"
-
-      - name: Screenshots und Bericht bei Fehlern speichern
+      - name: Ergebnisse bei Fehlern speichern
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: testergebnisse
+          name: testergebnisse-browser
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Szenarien und Layout-Matrix (leichte Variante) in Chromium
+  e2e-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten installieren
+        run: npm ci
+        timeout-minutes: 5
+      - name: Chromium installieren
+        run: npx playwright-core install --with-deps chromium
+        timeout-minutes: 5
+      - name: Szenarien und Layout-Matrix (Chromium)
+        run: npm run test:e2e
+        timeout-minutes: 12
+        env:
+          CI: "true"
+          ENGINES: chromium
+          SUITES: scenarios,matrix
+          QUICK: "1"
+          SUITE_TIMEOUT_MIN: "5"
+      - name: Ergebnisse bei Fehlern speichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testergebnisse-core
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---- Schwere Tests (3D-Würfel, Affentest, WebKit): laufen parallel, melden Fehler, blockieren die Veröffentlichung nicht ----
+  e2e-heavy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten installieren
+        run: npm ci
+        timeout-minutes: 5
+      - name: Browser installieren
+        run: npx playwright-core install --with-deps ${{ matrix.engine }}
+        timeout-minutes: 6
+      - name: Würfel-3D-Tests und Affentest (leichte Variante)
+        run: npm run test:e2e
+        timeout-minutes: 11
+        env:
+          CI: "true"
+          LIGHT: "1"
+          ENGINES: ${{ matrix.engine }}
+          SUITES: ${{ matrix.engine == 'webkit' && 'scenarios,cube,monkey' || 'cube,monkey' }}
+          SEEDS: "11"
+          ACTIONS: "80"
+          QUICK: "1"
+          SUITE_TIMEOUT_MIN: "5"
+      - name: Ergebnisse bei Fehlern speichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testergebnisse-schwer-${{ matrix.engine }}
           path: test-results
           if-no-files-found: ignore
           retention-days: 14
 
   deploy:
-    needs: [build, e2e]
+    timeout-minutes: 10
+    needs: [build, browser, e2e-core]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

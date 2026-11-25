@@ -6,11 +6,12 @@ import path from "node:path";
 import { buildDist, resultsDir } from "./lib.mjs";
 
 const dist = buildDist();
-const suites = ["scenarios", "cube", "matrix", "monkey"];
+const suites = (process.env.SUITES || "scenarios,cube,matrix,monkey").split(",");
+const limit = Number(process.env.SUITE_TIMEOUT_MIN || 0);
 let failed = false;
 const rows = [];
 for (const s of suites) {
-  const r = spawnSync("node", [path.join(import.meta.dirname, `${s}.mjs`)], { stdio: "inherit", env: { ...process.env, DIST: dist } });
+  const r = spawnSync("node", [path.join(import.meta.dirname, `${s}.mjs`)], { stdio: "inherit", env: { ...process.env, DIST: dist }, ...(limit ? { timeout: (limit + 1) * 60000 } : {}) });
   if (r.status !== 0) failed = true;
   const f = path.join(resultsDir, `${s}.json`);
   const res = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : { cases: 0, failures: ["kein Ergebnis"], seconds: 0 };

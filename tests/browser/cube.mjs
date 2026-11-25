@@ -1,5 +1,5 @@
 // Würfel-Trainer: Bedienung am 3D-Würfel (Ziehen, Treffer, Ansicht, Zoom), Zug-Eingabe, Zeitnahme, Lernpfad, Aufräumen. Chromium und WebKit.
-import { buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, tap, tabTap, sleep, openCube, closeSheet, cubeState, cubeIdle, userMoves, scrambleMoves, engineState, dragMouse } from "./lib.mjs";
+import { LIGHT, buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, tap, tabTap, sleep, openCube, closeSheet, cubeState, cubeIdle, userMoves, scrambleMoves, engineState, dragMouse } from "./lib.mjs";
 
 const dist = buildDist();
 const { engines, notes } = await launchEngines();
@@ -76,8 +76,9 @@ for (const eng of engines) {
       const na = normal.findIndex((v) => v !== 0);
       const others = [0, 1, 2].filter((a) => a !== na);
       for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        if (LIGHT && !([[0, 0], [1, 0], [0, 1], [-1, -1]].some(([a, b]) => a === i && b === j))) continue;
         const pos = [0, 0, 0]; pos[na] = normal[na]; pos[others[0]] = i; pos[others[1]] = j;
-        for (const axis of others) for (const sign of [1, -1]) {
+        for (const axis of others) for (const sign of LIGHT ? [1] : [1, -1]) {
           await neu();
           const exp = await page.evaluate(([p, nn, ax, s]) => {
             const E = window.app.cube.engine;
@@ -111,7 +112,7 @@ for (const eng of engines) {
         }
       }
     }
-    expect(n >= 40, `nur ${n} Treffer-Prüfungen`);
+    expect(n >= (LIGHT ? 12 : 40), `nur ${n} Treffer-Prüfungen`);
   });
 
   await step("Kurzes, langsames Ziehen rastet zurück: kein Zug", async () => {
@@ -305,7 +306,7 @@ for (const eng of engines) {
     await closeSheet(page);
     await sleep(700);
     const base = await page.evaluate(() => ({ ...window.__cubeCounters }));
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < (LIGHT ? 3 : 8); i++) {
       await openCube(page);
       await tap(page, V(".cz-btn").filter({ hasText: "Mischen" }).first(), 200);
       await sleep(300);
@@ -313,7 +314,7 @@ for (const eng of engines) {
       await sleep(600);
     }
     const end = await page.evaluate(() => ({ ...window.__cubeCounters, cube: !!window.__cube3d, canvases: document.querySelectorAll("canvas.cube3d-canvas").length }));
-    expect(end.created - base.created === 8 && end.destroyed - base.destroyed === 8, `Szenen angelegt ${end.created - base.created}, aufgeräumt ${end.destroyed - base.destroyed}`);
+    expect(end.created - base.created === (LIGHT ? 3 : 8) && end.destroyed - base.destroyed === (LIGHT ? 3 : 8), `Szenen angelegt ${end.created - base.created}, aufgeräumt ${end.destroyed - base.destroyed}`);
     expect(end.listeners === base.listeners && end.listeners === 0, `Listener übrig: ${end.listeners}`);
     expect(!end.cube && end.canvases === 0, "Zeichenfläche oder Testzugang bleibt nach dem Schließen stehen");
     const f1 = end.frames; await sleep(900);

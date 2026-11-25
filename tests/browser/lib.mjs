@@ -55,6 +55,14 @@ export async function launchEngines() {
   return { engines: out, notes };
 }
 
+// Notbremse: Läuft eine Suite länger als SUITE_TIMEOUT_MIN Minuten (in CI gesetzt), bricht sie mit Fehler ab, statt ewig zu hängen.
+if (process.env.SUITE_TIMEOUT_MIN) {
+  const t = setTimeout(() => { console.error(`\nZeitüberschreitung: Suite läuft länger als ${process.env.SUITE_TIMEOUT_MIN} Minuten – Abbruch.`); process.exit(3); }, Number(process.env.SUITE_TIMEOUT_MIN) * 60000);
+  t.unref();
+}
+/** Kurzläufer für CI (weniger Wiederholungen); lokal läuft alles. */
+export const LIGHT = !!process.env.LIGHT;
+
 const IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 
 /** Neue Seite mit Handy-Emulation. Sammelt Konsolenfehler. */
@@ -68,6 +76,8 @@ export async function openApp(dist, { browser, engine }, { width = 390, height =
     route.fulfill({ status: 200, contentType: types[path.extname(f)] ?? "application/octet-stream", body: fs.readFileSync(f) });
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(process.env.CI ? 15000 : 30000);
+  page.setDefaultNavigationTimeout(30000);
   const errors = [];
   const benign = /Service Worker|favicon|apple-touch-icon|Failed to load resource|NotFoundError|NotAllowedError|Permission denied|getUserMedia/i;
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
