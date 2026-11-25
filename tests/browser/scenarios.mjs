@@ -246,6 +246,38 @@ for (const eng of engines) {
   });
 
 
+  // ---------- Gewohnheit ----------
+  await step("Gewohnheit: Detailseite ohne Timer, mit Haken, Serie in Tagen und Wochenpunkten", async () => {
+    const hid = await db(async () => {
+      const h = await window.app.logic.createSkill({ name: "Gummizüge tragen", title: "Gummizüge tragen", kategorie: "Gewohnheiten", typ: "gewohnheit", status: "lerne" });
+      await window.db.sessions.put({ id: "habit-session", skillId: h.id, start: Date.now() - 3 * 86400000, minutes: 15 });
+      return h.id;
+    });
+    await tabTap(page, "Heute");
+    await tap(page, V(".row").filter({ hasText: "Gummizüge tragen" }).first(), 900);
+    expect(await V(".habit-check").count() === 1, "Haken-Knopf „Heute erledigt“ fehlt");
+    const text = await page.evaluate(() => document.querySelector(".habit-detail")?.parentElement?.textContent ?? "");
+    for (const bad of ["min/Einheit", "Einheit 15", "Rekorde", "Sessions", "Timer"]) expect(!text.includes(bad), `„${bad}“ steht noch auf der Gewohnheits-Seite`);
+    expect(await V(".hero, .hero-btn, .ring").count() === 0, "Timer-Kreis oder Play-Knopf sichtbar");
+    expect(/Aktiv/.test(await V(".status-menu").first().textContent()), "Status „Aktiv“ fehlt");
+    expect(/Beste Serie/.test(await V(".habit-nums").first().textContent()) && /in Folge/.test(await V(".habit-nums").first().textContent()), "Serie in Tagen fehlt");
+    const dot = await V(".week-dots.is-big .week-dot i").first().boundingBox();
+    expect(dot && dot.width >= 22, "Wochenpunkte sind nicht größer");
+    expect(await V(".fold-head").filter({ hasText: "Notizen" }).count() === 1, "Notizen sind nicht einklappbar");
+    const hb = await V(".habit-check").first().boundingBox();
+    expect(hb.width >= 44 && hb.height >= 44, "Haken-Knopf zu klein");
+    // antippen = abgehakt, nochmal = zurück (ein Haken pro Tag)
+    await tap(page, V(".habit-check").first(), 500);
+    expect(await db((id) => window.db.checks.where("skillId").equals(id).count(), hid) === 1, "Haken wurde nicht gespeichert");
+    expect(/Heute erledigt$/.test((await V(".habit-check-label").first().textContent()) ?? ""), "Beschriftung zeigt „erledigt“ nicht");
+    expect(/1 Tag/.test(await V(".habit-nums").first().textContent()), "Serie zeigt nicht 1 Tag");
+    await tap(page, V(".habit-check").first(), 500);
+    expect(await db((id) => window.db.checks.where("skillId").equals(id).count(), hid) === 0, "zweites Antippen nimmt den Haken nicht zurück");
+    // Sessions bleiben erhalten
+    expect(await db(() => window.db.sessions.get("habit-session").then((x) => !!x)), "Session der Gewohnheit ging verloren");
+    await tap(page, V(".nav-back, .back-btn, .nav-bar button").first(), 500).catch(() => {});
+  });
+
   // ---------- Flaggen-Trainer ----------
   await step("Flaggen: Skill ist da, Trainer öffnet", async () => {
     await db(() => { localStorage.removeItem("flags.run"); });

@@ -22,6 +22,7 @@ import { TidyItemRows } from "./Tidy";
 import { MilestoneList } from "./Milestones";
 import { Records } from "./Records";
 import { ProjectDetail } from "./Projects";
+import HabitDetail from "./HabitDetail";
 import { CardsSheet } from "./Cards";
 import { ExamGroup } from "./Exam";
 import { TrainerSheet, builtInTrainer, useCardCounts } from "../trainer/Trainer";
@@ -42,6 +43,7 @@ const host = (url: string) => {
 export function SkillDetail({ id }: { id: string }) {
   const kind = useLiveQuery(() => db.skills.get(id).then((s) => s?.typ ?? null), [id]);
   if (kind === "projekt") return <ProjectDetail id={id} />;
+  if (kind === "gewohnheit") return <HabitDetail id={id} />;
   return <SkillPage id={id} />;
 }
 

@@ -27,11 +27,11 @@ export function habitStreak(id: string, checked: Set<string>): number {
 }
 
 /** Sieben Punkte für Montag bis Sonntag der laufenden Woche */
-export function WeekDots({ id, checked }: { id: string; checked: Set<string> }) {
+export function WeekDots({ id, checked, big }: { id: string; checked: Set<string>; big?: boolean }) {
   const start = startOfWeek();
   const today = dayKey(new Date());
   return (
-    <span className="week-dots" aria-label="Diese Woche">
+    <span className={`week-dots${big ? " is-big" : ""}`} aria-label="Diese Woche">
       {WEEK.map((l, i) => {
         const k = dayKey(addDays(start, i));
         return (

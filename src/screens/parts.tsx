@@ -106,15 +106,16 @@ export function SkillRow({ skill, total, now, showCategory }: { skill: Skill; to
   if (running) subtitle = <span className="running-label">Läuft · {elapsedLabel(now - (skill.timerStart ?? now))}</span>;
   else if (active && skill.typ === "skill") subtitle = `${minutesLabel(total)} von ${hoursLabel(skill.estMinutes)}`;
   else if (skill.typ !== "skill") subtitle = TYP_LABEL[skill.typ];
+  const habit = skill.typ === "gewohnheit";
   if (showCategory) subtitle = <>{shortCategory(skill.kategorie)}{subtitle ? <span className="sep">{subtitle}</span> : null}</>;
 
   return (
     <Row className="cv skill-row" style={catVars(skill.kategorie)} title={<>{skill.title}<UnsortedMark on={skill.unsorted} /></>} subtitle={subtitle}
       selected={nav.selectedSkill === skill.id}
       leading={<StatusIcon status={skill.status} />}
-      detail={!active && total > 0 ? minutesLabel(total) : undefined}
-      trailing={active ? <PlayButton skill={skill} /> : undefined}
-      chevron={!active}
+      detail={!habit && !active && total > 0 ? minutesLabel(total) : undefined}
+      trailing={active && !habit ? <PlayButton skill={skill} /> : undefined}
+      chevron={!active || habit}
       onClick={() => nav.push(skill.typ === "projekt" ? { type: "project", id: skill.id } : { type: "skill", id: skill.id })} />
   );
 }

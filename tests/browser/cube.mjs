@@ -1,5 +1,5 @@
 // Würfel-Trainer: Bedienung am 3D-Würfel (Ziehen, Treffer, Ansicht, Zoom), Zug-Eingabe, Zeitnahme, Lernpfad, Aufräumen. Chromium und WebKit.
-import { LIGHT, buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, tap, tabTap, sleep, openCube, closeSheet, cubeState, cubeIdle, userMoves, scrambleMoves, engineState, dragMouse } from "./lib.mjs";
+import { LIGHT, colorClass, buildDist, launchEngines, openApp, Report, layoutProblems, integrityProblems, tap, tabTap, sleep, openCube, closeSheet, cubeState, cubeIdle, userMoves, scrambleMoves, engineState, dragMouse } from "./lib.mjs";
 
 const dist = buildDist();
 const { engines, notes } = await launchEngines();
@@ -70,7 +70,34 @@ for (const eng of engines) {
     });
   }
 
+  await step("Farben bleiben aus jedem Blickwinkel kräftig und unterscheidbar (10 Ansichten, alle sichtbaren Flächen)", async () => {
+    await neu(false);
+    const faces = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], [-1, 0, 0], [0, 0, -1]]; // Farbe 0..5 = Weiß, Rot, Grün, Gelb, Orange, Blau
+    const views = [[-10, 10], [45, 35], [135, 20], [-135, -40], [0, -70], [180, 60], [0, 80], [90, -20], [-60, 70], [160, -60]];
+    let seen = 0;
+    for (const [yaw, pitch] of views) {
+      await page.evaluate(([a, b]) => window.__cube3d.setView(a, b), [yaw, pitch]);
+      await sleep(80);
+      for (let f = 0; f < 6; f++) {
+        if (!(await page.evaluate((n) => window.__cube3d.visible(n), faces[f]))) continue;
+        for (const [i, j] of [[0, 0], [1, 1], [-1, 1]]) {
+          const n = faces[f]; const ax = n.findIndex((v) => v !== 0); const others = [0, 1, 2].filter((a) => a !== ax);
+          const pos = [0, 0, 0]; pos[ax] = n[ax]; pos[others[0]] = i; pos[others[1]] = j;
+          const [x, y] = await xy(pos, n);
+          const rgb = await page.evaluate(([px, py]) => window.__cube3d.sample(px, py), [x, y]);
+          const c = colorClass(rgb);
+          seen++;
+          if (c.id !== f) await rep.fail(page, `${tag} · Farben: Ansicht ${yaw}°/${pitch}°, Fläche ${f} (Soll ${["Weiß", "Rot", "Grün", "Gelb", "Orange", "Blau"][f]}) wirkt wie ${["Weiß", "Rot", "Grün", "Gelb", "Orange", "Blau"][c.id]} (RGB ${rgb}, Sättigung ${c.sat.toFixed(2)})`, `${tag}-farben`);
+          else if (f !== 0 && c.sat < 0.45) await rep.fail(page, `${tag} · Farben: Ansicht ${yaw}°/${pitch}°, ${["Weiß", "Rot", "Grün", "Gelb", "Orange", "Blau"][f]} ausgebleicht (Sättigung ${c.sat.toFixed(2)}, RGB ${rgb})`, `${tag}-farben`);
+          else rep.ok(true);
+        }
+      }
+    }
+    expect(seen >= 60, `nur ${seen} Farbproben`);
+    await page.evaluate(() => window.__cube3d.resetViewNow());
+  });
   await step("Treffer: jede sichtbare Fläche und jeder Aufkleber dreht die berührte Schicht (2 Richtungen je Aufkleber)", async () => {
+    await neu(); // schräge Ansicht: drei Flächen sichtbar
     let n = 0;
     for (const normal of [[0, 1, 0], [1, 0, 0], [0, 0, 1]]) {
       if (!(await page.evaluate((nn) => window.__cube3d.visible(nn), normal))) continue;
@@ -240,7 +267,7 @@ for (const eng of engines) {
     const rows = await page.evaluate(() => window.db.cubeTimes.toArray());
     expect(rows.length === 1 && rows[0].scramble.split(" ").length === 25, "Zeit wurde nicht mit Mischung gespeichert");
     await tap(page, V('button[aria-label="Zeiten"]').first(), 500);
-    expect(await V(".cz-rowtime").count() === 1 && (await V(".cz-stats b").first().textContent()) === t, "Verlauf zeigt Bestzeit nicht");
+    expect(await V(".cz-rowtime").count() === 1 && (await V(".cz-stats b").first().textContent()) === (await V(".cz-rowtime").first().textContent()) && /^\d+(:\d\d)?,\d\d$/.test(await V(".cz-rowtime").first().textContent()), "Verlauf zeigt Bestzeit nicht");
     // fünf weitere Zeiten: Ao5 erscheint; Zeit löschen und zurückholen
     await page.evaluate(async () => { for (const ms of [30000, 25000, 28000, 26000]) { await window.app.cube.store.addCubeTime(ms, "R", Date.now() + ms); } });
     await sleep(500);
@@ -269,13 +296,13 @@ for (const eng of engines) {
   });
 
   // ---------- Lernpfad ----------
-  await step("Lernpfad: sieben Schritte, „Zeig mir“ spielt den Algorithmus am selben Würfel bis gelöst", async () => {
+  await step("Anleitung: sieben Schritte, „Zeig mir“ spielt den Algorithmus am selben Würfel bis gelöst", async () => {
     await neu(false);
     const mainRect = await page.evaluate(() => window.__cube3d.canvasRect());
-    await tap(page, V('button[aria-label="Lernpfad"]').first(), 500);
+    await tap(page, V('button[aria-label="Anleitung"]').first(), 500);
     expect(await V(".row").filter({ hasText: /^\d\./ }).count() === 7, "Lernpfad hat nicht 7 Schritte");
     const listRect = await page.evaluate(() => window.__cube3d.canvasRect());
-    expect(Math.abs(listRect.width - mainRect.width) < 1.5 && Math.abs(listRect.height - mainRect.height) < 1.5, `Würfel ändert die Größe im Lernpfad (${mainRect.width}×${mainRect.height} → ${listRect.width}×${listRect.height})`);
+    expect(Math.abs(listRect.width - mainRect.width) < 1.5 && Math.abs(listRect.height - mainRect.height) < 1.5, `Würfel ändert die Größe in der Anleitung (${mainRect.width}×${mainRect.height} → ${listRect.width}×${listRect.height})`);
     await tap(page, V(".row").filter({ hasText: "Weiße Ecken" }).first(), 500);
     await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Zeig mir" }).first(), 900);
     const stepRect = await page.evaluate(() => window.__cube3d.canvasRect());
@@ -291,7 +318,7 @@ for (const eng of engines) {
     expect(await V(".cz-player").count() === 0, "Wiedergabe läuft nach dem Beenden weiter");
     expect(await cubeState(page) === await engineState(page, []), "Der Würfel von vorher wurde nicht wiederhergestellt");
   });
-  await step("Lernpfad: Üben – der Fall wird mit der Umkehrung aufgebaut, Lösen per Eingabe speichert „kann ich“", async () => {
+  await step("Anleitung: Üben – der Fall wird mit der Umkehrung aufgebaut, Lösen per Eingabe speichert „kann ich“", async () => {
     await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Üben" }).first(), 900);
     await cubeIdle(page);
     const caseState = await cubeState(page);

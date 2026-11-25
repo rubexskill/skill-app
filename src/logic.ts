@@ -236,6 +236,25 @@ export async function toggleCheck(skillId: string, date: string) {
   else await db.checks.add({ id: key, skillId, date });
 }
 
+/** Serie in Tagen: laufende (heute oder gestern als letzter Tag) und beste Serie aus allen Haken-Tagen (Schlüssel „JJJJ-MM-TT“) */
+export function habitStats(dates: string[], today: Date = new Date()): { current: number; best: number } {
+  const set = new Set(dates);
+  if (!set.size) return { current: 0, best: 0 };
+  let d = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  if (!set.has(dayKey(d))) d = addDays(d, -1);
+  let current = 0;
+  while (set.has(dayKey(d))) { current++; d = addDays(d, -1); }
+  let best = 0, run = 0, prev = "";
+  for (const k of [...set].sort()) {
+    const [y, m, dd] = k.split("-").map(Number);
+    const before = dayKey(addDays(new Date(y, m - 1, dd, 12), -1));
+    run = prev === before ? run + 1 : 1;
+    prev = k;
+    if (run > best) best = run;
+  }
+  return { current, best };
+}
+
 export const isActiveSkill = (s: Skill) => s.status === "lerne" && s.typ === "skill";
 export const isActiveHabit = (s: Skill) => s.status === "lerne" && s.typ === "gewohnheit";
 

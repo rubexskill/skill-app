@@ -225,7 +225,14 @@ export async function tap(page, loc, wait = 450) {
   const el = typeof loc === "string" ? page.locator(loc).first() : loc;
   await el.evaluate((e) => { if (e.closest(".sheet-layer")) e.scrollIntoView({ block: "nearest" }); else if (!e.closest(".tabbar, .navbar, .as-layer, .fsp")) e.scrollIntoView({ block: "center" }); });
   await sleep(100);
-  const b = await el.boundingBox();
+  // Warten, bis das Ziel stillsteht (Blätter und Seiten fahren ein; auf langsamen Rechnern trifft ein Tipp sonst die Leinwand dahinter)
+  let b = await el.boundingBox();
+  for (let i = 0; i < 25 && b; i++) {
+    await sleep(60);
+    const b2 = await el.boundingBox();
+    if (b2 && Math.abs(b2.x - b.x) < 0.5 && Math.abs(b2.y - b.y) < 0.5 && Math.abs(b2.width - b.width) < 0.5 && Math.abs(b2.height - b.height) < 0.5) { b = b2; break; }
+    b = b2;
+  }
   if (!b) throw new Error("kein Rahmen: " + el);
   await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
   await sleep(wait);
@@ -411,4 +418,16 @@ export async function cubeProblems(page, ref) {
     if (t && vis(t) && parseFloat(getComputedStyle(t).fontSize) < 32) out.push("Zeitanzeige zu klein");
     return out;
   }, ref);
+}
+
+/** Welche Würfelfarbe ist das? 0 Weiß, 1 Rot, 2 Grün, 3 Gelb, 4 Orange, 5 Blau – nach Farbton und Sättigung, unabhängig von der Helligkeit. */
+export function colorClass([r, g, b]) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const sat = mx === 0 ? 0 : (mx - mn) / mx;
+  if (sat < 0.2) return { id: 0, sat, hue: 0 };
+  let h;
+  if (mx === r) h = ((g - b) / (mx - mn)) * 60; else if (mx === g) h = (2 + (b - r) / (mx - mn)) * 60; else h = (4 + (r - g) / (mx - mn)) * 60;
+  h = (h + 360) % 360;
+  const id = h < 12 || h >= 330 ? 1 : h < 38 ? 4 : h < 75 ? 3 : h < 190 ? 2 : 5;
+  return { id, sat, hue: h };
 }

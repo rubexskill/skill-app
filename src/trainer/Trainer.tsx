@@ -31,7 +31,7 @@ export function builtInTrainer(skill: Pick<Skill, "title" | "metric">): TrainerO
   if (t === "Wochentag berechnen") return { kind: "weekday", label: "Wochentag-Training", hint: "Zufallsdaten, Wochentag antippen" };
   if (t === "Morsecode") return { kind: "morse", label: "Morse-Training", hint: "Zeichen und Wörter sehen oder hören" };
   if (t === "Flaggen & Geografie") return { kind: "flags", label: "Flaggen-Trainer", hint: "195 Flaggen, Hauptstädte, Lernstand" };
-  if (t === "Zauberwürfel") return { kind: "cube", label: "Würfel-Trainer", hint: "3D-Würfel, Zeiten, Lernpfad" };
+  if (t === "Zauberwürfel") return { kind: "cube", label: "Würfel-Trainer", hint: "3D-Würfel, Zeiten, Anleitung" };
   if (BREATH.includes(t)) return { kind: "breath", label: "Atemübung", hint: "Ruhiger Kreis mit Phasen" };
   if (skill.metric?.unit.trim() === "s") return { kind: "stopwatch", label: "Stoppuhr", hint: "Mit Bestzeit als Rekord" };
   return null;

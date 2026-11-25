@@ -198,7 +198,7 @@ const LABEL: Record<SyncTable, [string, string]> = {
   recordings: ["Aufnahme", "Aufnahmen"],
   flagStats: ["Flaggen-Lernstand", "Flaggen-Lernstände"],
   cubeTimes: ["Würfel-Zeit", "Würfel-Zeiten"],
-  cubeProgress: ["Lernpfad-Stand", "Lernpfad-Stände"],
+  cubeProgress: ["Anleitungs-Stand", "Anleitungs-Stände"],
 };
 
 /** „3 Sessions, 1 To-do“ */

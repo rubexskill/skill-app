@@ -306,7 +306,7 @@ export default function CubeTrainer({ skill }: TrainerProps) {
             </div>
             <div className="cz-icons">
               <button className="fl-icon" aria-label="Zeiten" onClick={() => setPanel("history")}><Icon name="clock" size={22} /></button>
-              <button className="fl-icon" aria-label="Lernpfad" onClick={() => setPanel("path")}><Icon name="book" size={22} /></button>
+              <button className="fl-icon" aria-label="Anleitung" onClick={() => setPanel("path")}><Icon name="book" size={22} /></button>
               <button className={`fl-icon${typing ? " is-on" : ""}`} aria-label="Züge eingeben" aria-pressed={typing} onClick={() => setTyping((t) => !t)}><Icon name="keyboard" size={22} /></button>
             </div>
           </div>
@@ -362,8 +362,8 @@ export default function CubeTrainer({ skill }: TrainerProps) {
 
       {panel === "path" && (
         <div className="fl">
-          <Bar title="Lernpfad" onBack={() => leaveTo("main")} label="Würfel" />
-          <p className="cz-lead">Die sieben Schritte der Anfängermethode zum Nachschlagen. Weiß liegt unten, Gelb oben. „Zeig mir“ spielt einen Algorithmus am Würfel oben ab.</p>
+          <Bar title="Anleitung" onBack={() => leaveTo("main")} label="Würfel" />
+          <p className="cz-lead">Die 7 Schritte der Anfängermethode</p>
           <Group>
             {STEPS.map((s, i) => {
               const st = stepState(s, progress ?? new Map());
@@ -378,7 +378,7 @@ export default function CubeTrainer({ skill }: TrainerProps) {
 
       {panel === "step" && step && (
         <div className="fl">
-          <Bar title={step.title} onBack={() => leaveTo("path")} label="Lernpfad" />
+          <Bar title={step.title} onBack={() => leaveTo("path")} label="Anleitung" />
           <p className="cz-lead">{step.text}</p>
           {step.algos.map((a) => {
             const st = progress?.get(a.id)?.state;
@@ -429,7 +429,7 @@ function LearnPanel({ algo, driver, register, onExit, onMark, typing, setTyping,
 
   return (
     <div className="cz-learn">
-      <Bar title="Üben" onBack={onExit} label="Lernpfad" />
+      <Bar title="Üben" onBack={onExit} label="Anleitung" />
       <div className="cz-learn-name">{algo.name}</div>
       {done ? (
         <div className="cz-done">

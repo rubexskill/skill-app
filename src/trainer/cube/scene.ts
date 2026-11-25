@@ -77,12 +77,12 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
   const envScene = new RoomEnvironment();
   const envTarget = pmrem.fromScene(envScene, 0.04);
   scene.environment = envTarget.texture;
-  scene.environmentIntensity = 0.5;
+  scene.environmentIntensity = 0.22;
   pmrem.dispose();
   envScene.dispose();
   track(envTarget);
-  scene.add(new HemisphereLight(0xffffff, 0x8a8a99, 0.55));
-  const sun = new DirectionalLight(0xffffff, 1.5);
+  scene.add(new HemisphereLight(0xffffff, 0x9a9aa8, 0.85));
+  const sun = new DirectionalLight(0xffffff, 1.15);
   sun.position.set(3, 6, 5);
   scene.add(sun);
 
@@ -98,7 +98,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     s.lineTo(-h + r, h); s.quadraticCurveTo(-h, h, -h, h - r); s.lineTo(-h, -h + r); s.quadraticCurveTo(-h, -h, -h + r, -h);
     return track(new ExtrudeGeometry(s, { depth: 0.022, bevelEnabled: false, curveSegments: 5 }));
   })();
-  const mats: Material[] = FACE_COLORS.map((c) => track(new MeshPhysicalMaterial({ color: c, roughness: 0.42, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.35 })));
+  const mats: Material[] = FACE_COLORS.map((c) => track(new MeshPhysicalMaterial({ color: c, roughness: 0.62, metalness: 0, specularIntensity: 0.35, clearcoat: 0.12, clearcoatRoughness: 0.6 })));
 
   const cubies: Group[] = [];
   const stickerMeshes: Mesh[] = new Array(54);
@@ -568,6 +568,16 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
         return { yaw: (yaw * 180) / Math.PI, pitch: (pitch * 180) / Math.PI, roll: (Math.atan2(up.x, up.y) * 180) / Math.PI, zoom, fov: camera.fov, dist: camera.position.z };
       },
       setView(yawDeg: number, pitchDeg: number) { yaw = normalizeYaw((yawDeg * Math.PI) / 180); pitch = clampPitch((pitchDeg * Math.PI) / 180); applyView(); request(); },
+      /** Bildpunkt (Seitenkoordinaten) → gezeichnete Farbe, direkt nach einem Zeichnen gelesen (für den Farbtest) */
+      sample(x: number, y: number): [number, number, number] {
+        renderer.render(scene, camera);
+        const gl = renderer.getContext();
+        const r = canvas.getBoundingClientRect();
+        const pr = renderer.getPixelRatio();
+        const buf = new Uint8Array(4);
+        gl.readPixels(Math.round((x - r.left) * pr), Math.round((r.height - (y - r.top)) * pr), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        return [buf[0], buf[1], buf[2]];
+      },
       resetViewNow() { yaw = DEFAULT_YAW; pitch = DEFAULT_PITCH; zoom = 1; applyView(); applyCamera(); request(); },
       /** Zustand des Gestenautomaten (für Tests) */
       gesture: () => ({ mode: g.mode, ids: [...g.ids] }),

@@ -94,7 +94,7 @@ for (const eng of engines) {
       await check("Würfel Ende");
       await tap(page, V('button[aria-label="Zeiten"]').first(), 700); await check("Würfel Zeiten");
       await tap(page, V(".fl-back").first(), 500);
-      await tap(page, V('button[aria-label="Lernpfad"]').first(), 700); await check("Würfel Lernpfad");
+      await tap(page, V('button[aria-label="Anleitung"]').first(), 700); await check("Würfel Anleitung");
       await tap(page, V(".row").filter({ hasText: "Weiße Ecken" }).first(), 700); await check("Würfel Schritt");
       await tap(page, V(".cz-algo-actions .cz-btn").filter({ hasText: "Zeig mir" }).first(), 1000); await check("Würfel Zeig mir");
       await tap(page, V('button[aria-label="Wiedergabe beenden"]').first(), 500);

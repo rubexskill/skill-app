@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db";
-import { bigTime, dailyMinutes, minutesLabel, monthBuckets, startOfWeek, streakDays, weekBuckets } from "../logic";
+import { addDays, bigTime, dailyMinutes, dayKey, minutesLabel, monthBuckets, startOfWeek, streakDays, weekBuckets } from "../logic";
 import { EmptyState, Group, NavPage, Row, Segmented } from "../components/ui";
 import { BarChart, Heatmap } from "../components/Charts";
 import { useStack } from "../components/Stack";
@@ -14,6 +14,8 @@ export function Stats() {
   const sessions = useLiveQuery(() => db.sessions.orderBy("start").toArray(), []);
   const sessionCount = useLiveQuery(() => db.sessions.count(), []);
   const skills = useLiveQuery(() => db.skills.toArray(), []);
+  const since = dayKey(addDays(new Date(), -29));
+  const checks = useLiveQuery(() => db.checks.where("date").aboveOrEqual(since).toArray(), [since]);
   const [range, setRange] = useState<"woche" | "monat">("woche");
 
   const data = useMemo(() => {
@@ -23,7 +25,8 @@ export function Stats() {
     const now = new Date();
     const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const per = new Map<string, number>();
-    for (const x of s) per.set(x.skillId, (per.get(x.skillId) ?? 0) + x.minutes);
+    const habitIds = new Set((skills ?? []).filter((k) => k.typ === "gewohnheit").map((k) => k.id)); // Gewohnheiten zählen in Tagen, nicht in Minuten
+    for (const x of s) if (!habitIds.has(x.skillId)) per.set(x.skillId, (per.get(x.skillId) ?? 0) + x.minutes);
     const top = [...per.entries()]
       .map(([id, min]) => ({ skill: skills?.find((k) => k.id === id), min }))
       .filter((x) => x.skill)
@@ -41,6 +44,9 @@ export function Stats() {
     };
   }, [sessions, skills]);
 
+  const habitDays = (skills ?? []).filter((k) => k.typ === "gewohnheit" && k.status === "lerne")
+    .map((k) => ({ k, n: new Set((checks ?? []).filter((c) => c.skillId === k.id).map((c) => c.date)).size }))
+    .sort((a, b) => b.n - a.n);
   const done = (skills ?? []).filter((k) => k.status === "kann" && k.typ === "skill");
   const topMax = data.top[0]?.min ?? 1;
   const tile = (label: string, min: number) => {
@@ -92,6 +98,16 @@ export function Stats() {
                   subtitle={<span className="top-bar"><i style={{ width: `${(min / topMax) * 100}%` }} /></span>}
                   leading={<span className="icon-tile tile-cat"><CategoryIcon name={skill!.kategorie} size={17} /></span>}
                   detail={minutesLabel(min)} onClick={() => nav.push({ type: "skill", id: skill!.id })} />
+              ))}
+            </Group>
+          )}
+
+          {habitDays.length > 0 && (
+            <Group header="Gewohnheiten · letzte 30 Tage">
+              {habitDays.slice(0, 8).map(({ k, n }) => (
+                <Row key={k.id} className="cv" style={catVars(k.kategorie)} title={k.title}
+                  leading={<span className="icon-tile tile-cat"><CategoryIcon name={k.kategorie} size={17} /></span>}
+                  detail={`${n} ${n === 1 ? "Tag" : "Tage"}`} onClick={() => nav.push({ type: "skill", id: k.id })} />
               ))}
             </Group>
           )}
