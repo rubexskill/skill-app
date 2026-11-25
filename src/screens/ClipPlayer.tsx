@@ -8,13 +8,24 @@ import { Icon } from "../components/Icon";
 const HIDE_MS = 2000;
 const GHOST_MS = 350;
 const SAVE_MS = 5000;
-const PTR = ["click", "dblclick", "pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend"] as const;
 
-/** Nach dem Schließen kurz alle Eingaben abfangen, damit kein „Geister-Klick“ die Seite dahinter trifft. */
-function blockGhostClicks() {
-  const stop = (e: Event) => { e.stopPropagation(); e.preventDefault(); };
-  PTR.forEach((n) => window.addEventListener(n, stop, true));
-  window.setTimeout(() => PTR.forEach((n) => window.removeEventListener(n, stop, true)), GHOST_MS);
+/**
+ * Kurze Eingabesperre nach dem Schließen (Geister-Klick): nur die Seite dahinter bekommt `pointer-events: none`
+ * (CSS `html[data-input-lock] #root`). Die Sperre hebt sich per Timer auf – und sofort bei Drehen, Größenänderung,
+ * Seitenwechsel oder Ausblenden, damit sie nie hängen bleiben kann.
+ */
+let lockTimer = 0;
+function releaseLock() {
+  window.clearTimeout(lockTimer);
+  delete document.documentElement.dataset.inputLock;
+}
+function lockInput() {
+  releaseLock();
+  document.documentElement.dataset.inputLock = "1";
+  lockTimer = window.setTimeout(releaseLock, GHOST_MS);
+}
+if (typeof window !== "undefined") {
+  for (const ev of ["resize", "orientationchange", "pagehide", "visibilitychange"]) window.addEventListener(ev, releaseLock);
 }
 
 /** Vollbild-Player: Erstes Tippen blendet nur die Steuerung ein, pausiert wird über den Mittelknopf. Zeit und Zähler laufen ohne React-Updates. */
@@ -31,6 +42,7 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [vis, setVis] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const timeEl = useRef<HTMLSpanElement>(null);
   const seekEl = useRef<HTMLInputElement>(null);
   const countEl = useRef<HTMLDivElement>(null);
@@ -80,12 +92,43 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
     return () => { cancelled = true; window.clearTimeout(hide.current); flushRef.current(); if (obj) URL.revokeObjectURL(obj); };
   }, [open, clip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seite dahinter sperren
+  // Seite dahinter sperren; Scroll-Sperre und Listener werden in jedem Fall wieder entfernt
   useEffect(() => {
     if (!open) return;
-    document.documentElement.classList.add("has-player");
-    return () => document.documentElement.classList.remove("has-player");
-  }, [open]);
+    const html = document.documentElement;
+    html.classList.add("has-player");
+    // Drehen/Größenänderung: Vollbild neu berechnen (iOS meldet die Maße oft erst verzögert), Steuerung wieder zeigen
+    const timers: number[] = [];
+    const relayout = () => {
+      const el = root.current;
+      if (!el) return;
+      const vv = window.visualViewport;
+      el.style.width = `${Math.round(vv?.width ?? window.innerWidth)}px`;
+      el.style.height = `${Math.round(vv?.height ?? window.innerHeight)}px`;
+      setUi(true);
+      poke();
+    };
+    const onTurn = () => {
+      relayout();
+      timers.push(window.setTimeout(relayout, 150), window.setTimeout(relayout, 450));
+    };
+    const onHide = () => { html.classList.remove("has-player"); };
+    const onShow = () => { if (document.visibilityState === "visible") { html.classList.add("has-player"); onTurn(); } };
+    window.addEventListener("resize", onTurn);
+    window.addEventListener("orientationchange", onTurn);
+    window.visualViewport?.addEventListener("resize", onTurn);
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      timers.forEach((t) => window.clearTimeout(t));
+      window.removeEventListener("resize", onTurn);
+      window.removeEventListener("orientationchange", onTurn);
+      window.visualViewport?.removeEventListener("resize", onTurn);
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onShow);
+      html.classList.remove("has-player");
+    };
+  }, [open, poke]);
 
   // Zähler gesammelt speichern
   useEffect(() => {
@@ -115,7 +158,7 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   const close = useCallback(() => {
     video.current?.pause();
     flushRef.current();
-    blockGhostClicks();
+    lockInput();
     onClose();
   }, [onClose]);
 
@@ -198,7 +241,7 @@ export function ClipPlayer({ open, onClose, part, clip, index, autoplay }: { ope
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
   return createPortal(
-    <div className={`fsp${vis ? " is-shown" : ""}`} role="dialog" aria-modal="true" aria-label={title}
+    <div ref={root} className={`fsp${vis ? " is-shown" : ""}`} role="dialog" aria-modal="true" aria-label={title}
       onPointerDown={stop} onPointerUp={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop} onMouseDown={stop} onContextMenu={(e) => e.preventDefault()}>
       {absent ? (
         <p className="fsp-missing">Dieses Video liegt nicht auf diesem Gerät. Über Mehr → „Clips importieren“ lässt es sich wieder einspielen.</p>

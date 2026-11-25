@@ -7,7 +7,7 @@ import { catVars } from "../categories";
 import { Ring } from "./parts";
 import { groupAll, originLabel, searchTodos, splitHits, subjectOf as subjectParts } from "../todoview";
 import { TidyItemRows, TidyStrip, UnsortedMark } from "./Tidy";
-import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useUI } from "../components/ui";
+import { AutoTextarea, CheckCircle, EmptyState, Group, NavButton, NavPage, Row, Sheet, SwipeRow, useFrozen, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 /** Abhaken mit kurzer Animation, erst danach wandert die Zeile nach „Erledigt“. */
@@ -52,7 +52,8 @@ const BUCKETS: { key: TodoBucket; title: string }[] = [
 export function Todos() {
   const { undoable } = useUI();
   const lists = useLiveQuery(() => db.lists.orderBy("order").toArray(), []);
-  const todos = useLiveQuery(() => db.todos.toArray(), []);
+  const liveTodos = useLiveQuery(() => db.todos.toArray(), []);
+  const [todos, gesture] = useFrozen(liveTodos);
   const [listId, setListIdState] = useState<string>(() => loadSetting(LIST_KEY, ALL_LISTS));
   const [text, setText] = useState("");
   const [due, setDue] = useState<string | null | undefined>(undefined);
@@ -92,19 +93,22 @@ export function Todos() {
     setDue(undefined);
   };
 
-  const remove = (t: Todo) =>
+  // Aktionen arbeiten mit der ID aus der Geste und lesen das To-do erst jetzt aus der Datenbank.
+  const remove = (id: string) =>
     undoable("To-do gelöscht", async () => {
-      await db.todos.delete(t.id);
-      return async () => void (await db.todos.put(t));
+      const cur = await db.todos.get(id);
+      if (!cur) return async () => {};
+      await db.todos.delete(id);
+      return async () => void (await db.todos.put(cur));
     });
 
-  const tomorrow = (t: Todo) => {
-    const prev = t.due;
+  const tomorrow = (id: string) =>
     undoable("Auf morgen verschoben", async () => {
-      await db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) });
-      return async () => void (await db.todos.update(t.id, { due: prev }));
+      const cur = await db.todos.get(id);
+      if (!cur) return async () => {};
+      await db.todos.update(id, { due: dayKey(addDays(new Date(), 1)) });
+      return async () => void (await db.todos.update(id, { due: cur.due }));
     });
-  };
 
   /** In der Liste „Schule“ steht das Fach vor dem Doppelpunkt: „Mathe: Aufgaben 3“. */
   const subjectOf = (t: Todo) => subjectParts(t.text);
@@ -119,9 +123,9 @@ export function Todos() {
     const overdue = !t.done && !!t.due && t.due < today;
     const isToday = !t.done && t.due === today;
     return (
-      <SwipeRow key={t.id} trigger={0.3} style={listStyle(t.listId, lists)} onSwipe={markSwiped}
-        leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: () => tomorrow(t) }}
-        actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: () => remove(t) }]}>
+      <SwipeRow key={t.id} id={t.id} trigger={0.3} style={listStyle(t.listId, lists)} onGesture={(ph) => { gesture(ph); if (ph === "end") markSwiped(); }}
+        leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: (gid) => tomorrow(gid ?? t.id) }}
+        actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: (gid) => remove(gid ?? t.id) }]}>
         <Row className={`todo-row${completing.has(t.id) ? " is-completing" : ""}`} title={<>{hl(shown)}<UnsortedMark on={t.unsorted} /></>} muted={isOn}
           subtitle={origin ? <span className="todo-origin cv" style={listStyle(t.listId, lists)}><i className="chip-dot" />{hl(origin)}</span> : undefined}
           detail={t.due && !t.done && !opts.hideDue ? <span className={`todo-due${overdue ? " is-overdue" : isToday ? " is-today" : ""}`}>{dueLabel(t.due)}</span> : undefined}

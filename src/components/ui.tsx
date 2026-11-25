@@ -189,13 +189,33 @@ export interface SwipeAction {
   label: string;
   tone: "danger" | "accent" | "gray" | "ok" | "soft-danger" | "soft";
   icon?: string;
-  onClick: () => void;
+  /** Bekommt die ID der Zeile, die beim Berühren (data-id) gegriffen wurde – nie neu aus Position oder Index bestimmt. */
+  onClick: (id?: string) => void;
 }
 
 const ACTION_W = 82;
 
+/** Nach einem Wisch (Bewegung > 10 px) und bis die Liste nachgerückt ist, keine Klicks auf Zeilen oder Haken (Geister-Klick). */
+let clickBlockUntil = 0;
+const blockClicks = (ms = 300) => { clickBlockUntil = Math.max(clickBlockUntil, performance.now() + ms); };
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    if (performance.now() >= clickBlockUntil) return;
+    if ((e.target as Element | null)?.closest?.(".swipe, .check")) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+}
+
+/** Hält eine Liste während einer Wisch-Geste (und der Animation danach) an, damit sich nichts unter dem Finger verschiebt. */
+export function useFrozen<T>(live: T): [T, (phase: "start" | "end") => void] {
+  const [frozen, setFrozen] = useState<{ v: T } | null>(null);
+  const latest = useRef(live);
+  latest.current = live;
+  const gesture = useCallback((phase: "start" | "end") => setFrozen(phase === "start" ? { v: latest.current } : null), []);
+  return [frozen ? frozen.v : live, gesture];
+}
+
 /** `leading`: Aktion beim Wischen nach rechts (z. B. „Erledigt“); weit durchwischen löst sie aus. */
-export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }: { actions: SwipeAction[]; leading?: SwipeAction; /** Anteil der Breite, ab dem die Aktion auslöst; ohne Wert: klassische Aktionsknöpfe. Mit Wert federt die Zeile sonst zurück. */ trigger?: number; style?: React.CSSProperties; onSwipe?: () => void; children: ReactNode }) {
+export function SwipeRow({ actions, leading, trigger, style, id, onGesture, children }: { actions: SwipeAction[]; leading?: SwipeAction; /** ID der Zeile (wird als data-id gesetzt und beim Berühren gelesen). */ id?: string; /** Anteil der Breite, ab dem die Aktion auslöst; ohne Wert: klassische Aktionsknöpfe. Mit Wert federt die Zeile sonst zurück. */ trigger?: number; style?: React.CSSProperties; /** „start“ beim Einrasten der Wischgeste, „end“ nach der Animation (nur mit `trigger`). */ onGesture?: (phase: "start" | "end") => void; children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef(0);
@@ -207,8 +227,9 @@ export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }
   leadingRef.current = leading;
   const myId = useRef(Math.random());
   const triggerRef = useRef(trigger);
-  const onSwipeRef = useRef(onSwipe);
-  onSwipeRef.current = onSwipe;
+  const onGestureRef = useRef(onGesture);
+  onGestureRef.current = onGesture;
+  const gestureId = useRef<string | null>(null);
   triggerRef.current = trigger;
 
   useEffect(() => {
@@ -240,6 +261,7 @@ export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }
 
   const begin = (x: number, y: number) => {
     st.current = { x, y, base: offsetRef.current, lock: "", id: 1, moved: false };
+    gestureId.current = wrapRef.current?.dataset.id ?? null;
     lastX.current = x;
   };
   /** true = horizontale Geste, Scrollen soll unterdrückt werden */
@@ -251,7 +273,7 @@ export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }
     if (!s.lock) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return false;
       s.lock = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      if (s.lock === "x") { window.dispatchEvent(new CustomEvent("swiperow-open", { detail: myId.current })); onSwipeRef.current?.(); }
+      if (s.lock === "x") { window.dispatchEvent(new CustomEvent("swiperow-open", { detail: myId.current })); if (triggerRef.current) onGestureRef.current?.("start"); }
     }
     if (s.lock !== "x") return false;
     s.moved = true;
@@ -281,13 +303,39 @@ export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }
     if (el) el.style.transition = "";
     const th = triggerRef.current;
     if (th) {
-      if (leadingRef.current && pos > width * th) {
-        apply(width, true);
-        window.setTimeout(() => { leadingRef.current?.onClick(); apply(0, false); setOffset(0); }, 200);
-      } else if (pos < -width * th) {
-        apply(-width, true);
-        window.setTimeout(() => { actionsRef.current[0].onClick(); apply(0, false); setOffset(0); }, 200);
-      } else { apply(0, true); setOffset(0); }
+      const lead = leadingRef.current;
+      const first = actionsRef.current[0];
+      const side = lead && pos > width * th ? "lead" : pos < -width * th ? "trail" : "";
+      blockClicks(300);
+      if (!side) {
+        apply(0, true);
+        setOffset(0);
+        window.setTimeout(() => onGestureRef.current?.("end"), 420);
+        return;
+      }
+      // Die Zeile, die beim Berühren gegriffen wurde, bleibt für die ganze Geste maßgeblich.
+      const gid = gestureId.current ?? undefined;
+      const run = side === "lead" ? lead!.onClick : first.onClick;
+      apply(side === "lead" ? width : -width, true);
+      window.setTimeout(() => {
+        // erst die Zeile ausblenden, dann die Liste nachrücken lassen
+        const wrap = wrapRef.current;
+        if (wrap) {
+          wrap.style.height = `${wrap.offsetHeight}px`;
+          void wrap.offsetHeight;
+          wrap.style.transition = "height 0.18s ease";
+          wrap.style.height = "0px";
+        }
+        window.setTimeout(() => {
+          blockClicks(300);
+          run(gid);
+          const w = wrapRef.current;
+          if (w) { w.style.transition = "none"; w.style.height = ""; }
+          apply(0, false);
+          setOffset(0);
+          window.setTimeout(() => onGestureRef.current?.("end"), 60);
+        }, 190);
+      }, 200);
       return;
     }
     if (leadingRef.current && pos > width * 0.42) {
@@ -352,7 +400,7 @@ export function SwipeRow({ actions, leading, trigger, style, onSwipe, children }
   };
 
   return (
-    <div ref={wrapRef} className={`swipe${trigger ? " is-quick" : ""}`} style={style}>
+    <div ref={wrapRef} className={`swipe${trigger ? " is-quick" : ""}`} style={style} data-id={id}>
       {leading && (
         <div className={`swipe-lead tone-${leading.tone}`}>
           <button className={`swipe-action tone-${leading.tone}`} style={trigger ? undefined : { width: lead }} tabIndex={trigger ? -1 : 0} onClick={() => { apply(0, true); setOffset(0); leading.onClick(); }}>
@@ -428,9 +476,19 @@ export function AutoTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaEle
 }
 
 export function CheckCircle({ checked, onToggle, label }: { checked: boolean; onToggle: () => void; label: string }) {
+  // Nur ein echter Tap zählt: pointerdown und click auf demselben Haken (Tastatur: detail 0). Geister-Klicks nach einem Wisch haben keinen pointerdown hier.
+  const down = useRef(false);
   return (
     <button className={`check${checked ? " is-checked" : ""}`} role="checkbox" aria-checked={checked} aria-label={label}
-      onClick={(e) => { e.stopPropagation(); navigator.vibrate?.(8); onToggle(); }}>
+      onPointerDown={() => { down.current = true; }} onPointerCancel={() => { down.current = false; }}
+      onClick={(e) => {
+        e.stopPropagation();
+        const real = down.current || e.detail === 0;
+        down.current = false;
+        if (!real) return;
+        navigator.vibrate?.(8);
+        onToggle();
+      }}>
       <Icon name="check" size={14} />
     </button>
   );
@@ -668,7 +726,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     setToastAction(action ?? null);
     setToastKey((k) => k + 1);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => { setToastText(null); setToastAction(null); }, action ? 5000 : Math.max(2600, Math.min(7500, text.length * 60)));
+    toastTimer.current = window.setTimeout(() => { setToastText(null); setToastAction(null); }, 4000);
   }, []);
 
   const undoable = useCallback(
@@ -697,6 +755,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [sheetOpen]);
+
+  useEffect(() => { if (import.meta.env.VITE_EXPOSE === "1") (window as unknown as { __toast?: typeof toast }).__toast = toast; }, [toast]);
 
   return (
     <UIContext.Provider value={{ toast, actionSheet, celebrate, undoable }}>

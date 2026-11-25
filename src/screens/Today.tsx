@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Skill, type Todo } from "../db";
+import { db, type Skill } from "../db";
 import { addDays, dayKey, dueLabel, isActiveHabit, isActiveSkill, longDate, minutesLabel, setTodoDone, startOfDay, toggleCheck } from "../logic";
-import { CheckCircle, EmptyState, Group, NavPage, Row, SwipeRow, useUI } from "../components/ui";
+import { CheckCircle, EmptyState, Group, NavPage, Row, SwipeRow, useFrozen, useUI } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { CategoryIcon, catVars } from "../categories";
 import { useNav } from "../nav";
@@ -20,7 +20,8 @@ export function Today() {
   const skills = useLiveQuery(() => db.skills.where("status").equals("lerne").sortBy("createdAt"), []);
   const checked = useHabitChecks();
   const todaySessions = useLiveQuery(() => db.sessions.where("start").aboveOrEqual(dayStart).toArray(), [dayStart]);
-  const todos = useLiveQuery(() => db.todos.toArray(), []);
+  const liveTodos = useLiveQuery(() => db.todos.toArray(), []);
+  const [todos, gesture] = useFrozen(liveTodos);
   const lists = useLiveQuery(() => db.lists.toArray(), []);
   const { completing, complete } = useCompleting();
   const dueCards = useLiveQuery(async () => {
@@ -48,17 +49,19 @@ export function Today() {
 
   const isDone = (s: Skill) => checked.has(`${s.id}|${today}`) || (s.typ === "skill" && (minutesToday.get(s.id) ?? 0) > 0);
 
-  const toTomorrow = (t: Todo) => {
-    const prev = t.due;
+  const toTomorrow = (id: string) =>
     undoable("Auf morgen verschoben", async () => {
-      await db.todos.update(t.id, { due: dayKey(addDays(new Date(), 1)) });
-      return async () => void (await db.todos.update(t.id, { due: prev }));
+      const cur = await db.todos.get(id);
+      if (!cur) return async () => {};
+      await db.todos.update(id, { due: dayKey(addDays(new Date(), 1)) });
+      return async () => void (await db.todos.update(id, { due: cur.due }));
     });
-  };
-  const removeTodo = (t: Todo) =>
+  const removeTodo = (id: string) =>
     undoable("To-do gelöscht", async () => {
-      await db.todos.delete(t.id);
-      return async () => void (await db.todos.put(t));
+      const cur = await db.todos.get(id);
+      if (!cur) return async () => {};
+      await db.todos.delete(id);
+      return async () => void (await db.todos.put(cur));
     });
 
   const hasCards = (dueCards?.length ?? 0) > 0;
@@ -127,9 +130,9 @@ export function Today() {
                 const isOn = t.done || completing.has(t.id);
                 const overdue = !t.done && t.due! < today;
                 return (
-                  <SwipeRow key={t.id} trigger={0.3}
-                    leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: () => toTomorrow(t) }}
-                    actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: () => removeTodo(t) }]}>
+                  <SwipeRow key={t.id} id={t.id} trigger={0.3} onGesture={gesture}
+                    leading={t.done ? undefined : { label: "Morgen", tone: "soft", icon: "calendar", onClick: (gid) => toTomorrow(gid ?? t.id) }}
+                    actions={[{ label: "Löschen", tone: "soft-danger", icon: "trash", onClick: (gid) => removeTodo(gid ?? t.id) }]}>
                     <Row className={completing.has(t.id) ? "is-completing" : ""} title={t.text} muted={isOn}
                       subtitle={<>{overdue ? <span className="overdue">{dueLabel(t.due!)}</span> : null}{listName(t.listId) ? <span className={overdue ? "sep" : ""}>{listName(t.listId)}</span> : null}</>}
                       leading={<CheckCircle checked={isOn} label={t.text} onToggle={() => (t.done ? void setTodoDone(t.id, false) : complete(t.id))} />} />

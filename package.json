@@ -9,7 +9,7 @@
     "preview": "vite preview --host",
     "icons": "pwa-assets-generator",
     "test": "vitest run",
-    "test:browser": "node tests/browser/overflow.mjs"
+    "test:browser": "node tests/browser/overflow.mjs && node tests/browser/bugs.mjs"
   },
   "dependencies": {
     "dexie": "^4.4.7",

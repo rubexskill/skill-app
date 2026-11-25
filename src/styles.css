@@ -1776,3 +1776,25 @@ button, [role="button"], a, label, summary, select, .row, .fold-head, .tab, .pil
 .fold-more, .nav-btn, .clip-more { min-width: 44px; }
 /* Geschlossene Hinweise fangen nichts ab */
 .toast:not(.is-shown) { pointer-events: none !important; visibility: hidden; transition: opacity 0.3s, transform 0.4s var(--ease), visibility 0s 0.4s; }
+
+/* ---- Hinweis (Toast): mittig, über der Tab-Leiste, passende Breite ---- */
+.toast { left: 0; right: 0; margin: 0 auto; width: fit-content; max-width: 90%; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); z-index: 300; transform: translateY(10px); text-wrap: balance; }
+.toast.is-shown { transform: none; animation: toast-up 0.45s var(--ease) both; }
+@keyframes toast-up { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+.toast.has-action > span { white-space: normal; }
+.is-wide .toast { bottom: calc(var(--safe-bottom) + 28px); }
+html.has-player .toast { bottom: calc(var(--safe-bottom) + 150px); }
+
+/* ---- Keine Textauswahl, kein blaues Highlight, kein iOS-Menü – außer in Eingaben und Notiz-Texten ---- */
+*, *::before, *::after { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"], .note-text, .note-text *, .selectable, .selectable * { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+::selection { background: transparent; }
+input::selection, textarea::selection, .note-text::selection, .note-text *::selection, .selectable *::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ---- To-do-Zeile: Titel kürzt, Datum steht immer ganz rechts und wird nie abgeschnitten ---- */
+.todo-row .row-main { flex: 1 1 0; min-width: 0; }
+.todo-row .row-detail { flex: 0 0 auto; max-width: none; overflow: visible; text-overflow: clip; white-space: nowrap; }
+.todo-due { white-space: nowrap; }
+
+/* ---- Eingabesperre nach dem Schließen des Players: nur die Seite dahinter, hebt sich immer auf ---- */
+html[data-input-lock] #root { pointer-events: none; }
