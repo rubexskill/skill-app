@@ -1,6 +1,6 @@
 # Testbericht – Selbsttests der App
 
-Stand: 25.11.2026 (nach Würfel-Löser, Drehteller-Ansicht und Gesten-Zustandsautomat). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
+Stand: 26.11.2026 (nach Gewohnheiten in Tagen, Datensicherheit, Robustheit, Barrierefreiheit). Alle Zahlen stammen aus einem vollständigen Lauf (`npm run test:e2e`, danach `npm run test:browser` in Hell und Dunkel, `npm test`, `npx tsc -b`, `PUBLIC_BUILD=1 npm run build`).
 
 ## Was getestet wird
 
@@ -47,6 +47,12 @@ Skill anlegen · Status ändern · Notiz und Link speichern · Session hinzufüg
 - **CI:** schnelle Jobs (build, browser, e2e-core) blockieren die Veröffentlichung, schwere (Würfel, Affentest, WebKit) laufen parallel und blockieren nicht. Im Test mit sieben gleichzeitigen Läufen auf einem Rechner dauerte der längste Job 6,4 Minuten (Würfel, Chromium); alle sieben liefen ohne Fehler.
 - **Größe:** Würfel-Chunk 620 KB (160 KB komprimiert, vorher 606/155 KB), also +14,5 KB bzw. +5 KB für Löser, Wiedergabe und Zustandsautomat; er wird weiter erst beim Öffnen geladen.
 
+### Etappen vom 26.11.2026: Gewohnheiten, Datensicherheit, Robustheit, Barrierefreiheit
+- **Vitest 424** (vorher 385): Serien in Tagen, Backup-Datei prüfen (leer, kaputt, abgeschnitten, Binärmüll, falsches Format, neuere Version, zu groß, kaputte Tabelle, doppelte und unbrauchbare Zeilen, Zusammenfassung), Import atomar (Fehler mitten im Import lässt alte Daten unberührt), doppelter Import, altes Backup, 500/2000/5000 Zeilen in unter 8 s, Speicherschutz und Erinnerung, **Migration von jeder alten Version 1 bis 10 mit Testdaten**, Tastaturhöhe, „Bewegung reduzieren“.
+- **Neue Browser-Suiten** (laufen in `test:e2e`): `states` (alle Seiten leer, 3 Größen × hell/dunkel, gesperrte Datenbank → Fehlerseite), `offline` (echter Service Worker: Flugmodus-Start, alle Hauptseiten, Flaggen und Würfel offline, Update-Ablauf mit „Update bereit“ und Neu laden, Version B startet offline), `perf` (große Datenmengen, 4-fach gedrosselte CPU, Budgets), `a11y` (Namen aller Bedienelemente, Kontrast AA in Hell und Dunkel, Fokus, Tippflächen ≥ 44 pt, 130 % und 160 % Schriftbreite, „Bewegung reduzieren“). Das Szenario „Gewohnheit“ und „Backup-Härtefälle“ (kaputte Datei, Zusammenfassung, Rückgängig, Erinnerung) kamen dazu; Konsolenwarnungen zählen jetzt wie Fehler.
+- **Gefunden und behoben:** (1) Bei Datenbanken vor Version 4 wurden die Klavierstück-Sessions nicht in den ersten Unterpunkt verschoben (Migrationstest). (2) Lange Listen: 2000 To-dos brauchten 3,7 s zum Öffnen und ruckelten (jetzt 1,5 s, 0 ruckelnde Bilder bei 4-facher Drosselung). (3) Ohne Datenbank (privater Modus) blieb die Seite leer. (4) Eine neue Version konnte beim Nachladen von Bausteinen (Würfel) zu Fehlern führen; jetzt wartet sie auf „Neu laden“. (5) Eingabefelder unten auf der Seite lagen unter der Tastatur. (6) Aufnahme ging beim Wechsel in den Hintergrund verloren. (7) Kontrast: 170 Verstöße gegen AA (Grautöne, Kategoriefarben, Tab-Leiste, Warnrot) behoben. (8) Tippflächen unter 44 pt (Haken, Status, Schalter, Kapseln). (9) Seiten unter der obersten waren per Tab erreichbar (jetzt `inert`). (10) WebKit-Fehler in der CI: ein Tipp traf das noch einfahrende Blatt; der Test-Helfer wartet jetzt, bis das Ziel stillsteht.
+- **Leistung (4-fach gedrosselte CPU, 500 Einträge, 2000 To-dos, 5000 Sessions):** Start 0,4 s, Heute 2,1 s, To-dos 1,5 s, To-do-Suche 0,9 s, Übersicht 1,2 s, Scrollen ohne Bild über 50 ms. Grenzen: Heute mit 125 gleichzeitig aktiven Skills ist ein Extrem; Stücke/Abschnitte/Aufnahmen (60/300/400) werden nur als Datenbestand geprüft, nicht jede Seite dazu gemessen.
+
 Nach jedem Schritt wird geprüft: Layout (nichts seitlich verschoben oder außerhalb, nichts überlappt, Tippflächen und Tab-Leiste erreichbar), keine Konsolenfehler, Datenintegrität (Verweise, Zahlen, Formate, keine verwaisten Dateien).
 
 ### Affentest
@@ -78,6 +84,7 @@ Am Testwerkzeug selbst (nicht an der App) wurden Fehlalarme beseitigt: Seiten in
 - Die Tests prüfen Layout und Verhalten, aber nicht, ob etwas **gut aussieht**; dafür gibt es Screenshots (`SHOTS=<Ordner>`).
 
 ## Nur auf einem echten iPhone prüfbar
+- **Tastatur:** ob die Felder tatsächlich über der iOS-Tastatur stehen (Test setzt die Höhe von Hand). **Hintergrund:** ob iOS die Aufnahme beim Sperren wirklich beendet. **Speicherschutz:** ob iOS `persist()` gewährt. **Dynamic Type:** die App skaliert nicht mit der iOS-Textgröße; getestet wurde nur das schmalere Layout. **VoiceOver:** Reihenfolge und Ansagen nur grob (Namen, `inert`, `main`), nicht mit dem echten Screenreader.
 - Finger-Trägheit, Wischgefühl, Gummiband-Scrollen, Tastaturverhalten beim Tippen in Eingabefelder.
 - Mikrofon-Zugriff, Aufnahme, Audio-Sitzung, Lautstärke und Stummschalter beim Metronom.
 - Safari-Eigenarten: Statusleiste und Notch, `100dvh` bei ein- und ausfahrender Leiste, Drehen im Vollbild-Player, Standbild-Erzeugung und Wiedergabe von iPhone-Videos (HEVC/MOV), Tonhöhe bei langsamem Tempo, Bildauswahl aus der Mediathek, Teilen-Menü für Backups, Installation als Web-App.
