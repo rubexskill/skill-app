@@ -52,6 +52,11 @@ Ehrliche Übersicht, Stand 26.11.2026. **fertig** = benutzbar und getestet, **te
 - **Clips, Aufnahmen und Titelbilder:** nur über ihren eigenen Export, nicht im JSON-Backup und nicht im Abgleich (siehe `DATENSICHERHEIT.md`).
 - Einschränkung: Wer Website-Daten löscht oder die App löscht, verliert alles, was nicht gesichert wurde.
 
+## Demo-Modus (nur öffentliche Version)
+- **Beispieldaten für Aufnahmen:** fertig. Unter „Mehr → Demo“: Demo-Daten laden, Aufnahme-Modus (blendet Hinweise aus), Demo zurücksetzen, Demo beenden. Eigene Datenbank, die echten Daten bleiben unberührt; alle Daten relativ zu heute, werden an einem neuen Tag automatisch erneuert.
+- **Inhalt:** 13 Skills (4 aktiv), 3 Gewohnheiten (Serien 12, 5, 2), 9 To-dos in 3 Listen, 4 Inbox-Einträge, Flaggen 70 von 195 sicher, 14 Würfelzeiten, Klavierstück mit 4 Abschnitten, Clip und 2 Aufnahmen (selbst erzeugte Medien).
+- Einschränkung: In Browsern ohne Blob-Speicher entfallen Clip und Aufnahmen. Die private Version hat keinen Demo-Modus.
+
 ## Plattform
 - **PWA, Offline, Updates:** fertig. Alle Seiten und Trainer laufen im Flugmodus; eine neue Version meldet sich mit „Update bereit · Neu laden“ und wird nie mitten in einer Übung geladen.
 - **Hell/Dunkel, iPhone und iPad, hoch und quer:** fertig; Kontrast AA, Namen für VoiceOver, „Bewegung reduzieren“ beachtet.

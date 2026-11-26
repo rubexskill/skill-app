@@ -1,3 +1,4 @@
+import { isDemo, settingKey } from "./demo/mode";
 import { UpdateNotice } from "./update";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -85,14 +86,14 @@ function useMedia(q: string) {
 
 function loadSection(): Section {
   try {
-    const s = localStorage.getItem("app.section") as Section | null;
+    const s = localStorage.getItem(settingKey("app.section")) as Section | null;
     return s && SECTIONS.some((x) => x.id === s) ? s : "overview";
   } catch {
     return "overview";
   }
 }
 const saveSection = (s: Section) => {
-  try { localStorage.setItem("app.section", s); } catch { /* egal */ }
+  try { localStorage.setItem(settingKey("app.section"), s); } catch { /* egal */ }
 };
 
 function useRunning() {
@@ -308,6 +309,7 @@ export default function App() {
         <QuickCapture />
         <Shell />
         <UpdateNotice />
+        {isDemo() && <div className="demo-chip" aria-hidden="true"><i />Demo</div>}
       </TimerProvider>
     </UIProvider>
   );

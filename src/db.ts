@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable, type Table } from "dexie";
 import { buildSeed, defaultLists, withDefaults } from "./seed";
+import { dbName } from "./demo/mode";
 import { backfillUnsorted } from "./backfill";
 import { moveToFirstUnit } from "./unitsMigrate";
 import type { Stat as FlagStat } from "./trainer/flags/logic";
@@ -380,7 +381,7 @@ export class SkillDB extends Dexie {
 
   constructor() {
     // Ohne optimistischen Abfrage-Cache: Listen und Statistik lesen immer direkt aus der Datenbank.
-    super("skill-app", { cache: "disabled" });
+    super(dbName(), { cache: "disabled" }); // im Demo-Modus eine eigene Datenbank
     this.version(1).stores({
       skills: "id, name, kategorie, typ, status, createdAt",
       sessions: "id, skillId, start",

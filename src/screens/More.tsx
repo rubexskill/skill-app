@@ -3,6 +3,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "../db";
 import { backupFileName, currentCounts, exportBackup, minutesLabel, readBackup, readBackupChecked, restoreBackup, shareFile } from "../logic";
 import { describeBackup } from "../backupfile";
+import { demoAllowed, isDemo, setRecordMode, startDemo, useRecordMode } from "../demo/mode";
+import { endDemo, resetDemo } from "../demo/control";
 import { loadBackupState, markBackup, reminderText, requestPersistence, setRemind, storageInfo, storageLabel, type StorageInfo } from "../safety";
 import { TidyButton } from "./Tidy";
 import { CheckCircle, Group, NavPage, Row, Segmented, Switch, SwipeRow, useUI } from "../components/ui";
@@ -26,6 +28,8 @@ export function More() {
   const { toast, actionSheet, undoable } = useUI();
   const [bstate, setBstate] = useState(() => loadBackupState());
   const [sinfo, setSinfo] = useState<StorageInfo | null>(null);
+  const rec = useRecordMode();
+  const demo = isDemo();
   useEffect(() => { void storageInfo().then(setSinfo); }, []);
   const [theme, setTheme] = useTheme();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -109,7 +113,7 @@ export function More() {
     }
   };
 
-  const reminder = reminderText(bstate, Date.now(), (stats?.skills ?? 0) + (stats?.todos ?? 0) > 0);
+  const reminder = rec ? null : reminderText(bstate, Date.now(), (stats?.skills ?? 0) + (stats?.todos ?? 0) > 0);
   const slabel = sinfo ? storageLabel(sinfo) : null;
 
   return (
@@ -156,11 +160,19 @@ export function More() {
         <Row title="Backup importieren" onClick={() => fileRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />
         <Row title="Erinnerung nach 14 Tagen" trailing={<Switch checked={bstate.remind} onChange={(v) => { setRemind(v); setBstate(loadBackupState()); }} label="Backup-Erinnerung" />} />
       </Group>
-      <Group header="Speicher" footer={slabel?.text}>
+      {!rec && <Group header="Speicher" footer={slabel?.text}>
         <Row title="Speicherschutz" detail={sinfo ? (sinfo.persisted ? "Geschützt" : sinfo.supported ? "Nicht geschützt" : "Nicht möglich") : "…"} />
         {sinfo?.usage != null && <Row title="Belegt" detail={sizeLabel(sinfo.usage)} />}
         {sinfo?.supported && !sinfo.persisted && <Row title="Schutz anfordern" tone="accent" onClick={() => void requestPersistence().then(async (ok) => { setSinfo(await storageInfo()); toast(ok ? "Der Speicher ist jetzt geschützt" : "Der Browser hat den Schutz nicht erteilt. Mach regelmäßig Backups."); })} />}
-      </Group>
+      </Group>}
+      {demoAllowed && (
+        <Group header="Demo" footer={demo ? "Die Demo läuft in einer eigenen Datenbank. Deine echten Daten sind unberührt und kommen mit „Demo beenden“ zurück." : "Beispieldaten für Aufnahmen. Sie liegen in einer getrennten Datenbank, deine echten Daten bleiben unberührt."}>
+          {!demo && <Row title="Demo-Daten laden" subtitle="Die App startet mit Beispieldaten neu" chevron onClick={() => startDemo()} leading={<span className="icon-tile tile-gray"><Icon name="bolt" size={17} /></span>} />}
+          {demo && <Row title="Aufnahme-Modus" subtitle="Blendet Hinweise aus" trailing={<Switch checked={rec} onChange={(v) => setRecordMode(v)} label="Aufnahme-Modus" />} />}
+          {demo && <Row title="Demo zurücksetzen" subtitle="Anfangszustand, Daten wieder relativ zu heute" chevron onClick={() => void resetDemo()} />}
+          {demo && <Row title="Demo beenden" tone="danger" onClick={() => actionSheet({ title: "Demo beenden?", message: "Die Demo-Daten werden gelöscht. Deine echten Daten bleiben unverändert.", choices: [{ label: "Demo beenden", destructive: true, onSelect: () => void endDemo() }] })} />}
+        </Group>
+      )}
       <Group header="Clips" footer={clips ? `${clips.count} ${clips.count === 1 ? "Clip" : "Clips"}, ${sizeLabel(clips.clipBytes)}. Clips sind nicht im Backup und werden nicht zwischen Geräten abgeglichen. Der Export legt die Videos als einzelne Dateien ab; der Import ordnet sie über den Dateinamen wieder zu.` : undefined}>
         <Row title="Clips exportieren" onClick={() => void exportClips()} chevron leading={<span className="icon-tile tile-gray"><Icon name="video" size={17} /></span>} />
         <Row title="Clips importieren" onClick={() => clipsRef.current?.click()} chevron leading={<span className="icon-tile tile-gray"><Icon name="download" size={17} /></span>} />

@@ -1,6 +1,7 @@
 // Neue App-Version: der Service Worker wartet, bis du „Neu laden“ tippst (oder die App schließt). So wird nie mitten in einer Übung neu geladen.
 import { useEffect, useState } from "react";
 import { registerSW } from "virtual:pwa-register";
+import { useRecordMode } from "./demo/mode";
 
 type Listener = (ready: boolean) => void;
 let ready = false;
@@ -34,7 +35,8 @@ export function useUpdateReady(): boolean {
 /** Dezenter Hinweis über der Tab-Leiste */
 export function UpdateNotice() {
   const on = useUpdateReady();
-  if (!on) return null;
+  const rec = useRecordMode(); // Aufnahme-Modus: keine Hinweise
+  if (!on || rec) return null;
   return (
     <div className="update-notice" role="status">
       <span>Update bereit</span>

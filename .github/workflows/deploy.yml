@@ -52,6 +52,18 @@ jobs:
           if grep -rqE "window[.](db|app)[ ]*=" dist/assets; then
             echo "Test-Zugang (window.db) im Build gefunden – Abbruch."; exit 1
           fi
+          # Demo-Modus (src/demo, public/demo): ausdrücklich erlaubte, erfundene Beispieldaten. Sie liegen bewusst nicht in src/library
+          # und werden separat geprüft: Markierung vorhanden, keine Links, keine E-Mail-Adressen, keine persönlichen Namen.
+          grep -q "demo-data-generic" src/demo/seed.ts || { echo "Demo-Daten ohne Markierung – Abbruch."; exit 1; }
+          if grep -rnE "https?://|[A-Za-z0-9._+-]+@[A-Za-z0-9-]+[.][A-Za-z]{2,}" src/demo; then
+            echo "Link oder E-Mail-Adresse in den Demo-Daten – Abbruch."; exit 1
+          fi
+          if grep -rniE "ruben|minholz|rubexskill|skills-private-seed" src/demo; then
+            echo "Persönliche Angabe in den Demo-Daten – Abbruch."; exit 1
+          fi
+          if [ -n "$(find public/demo -type f ! -name '*.mp4' ! -name '*.m4a')" ]; then
+            echo "Unerwartete Datei in public/demo – Abbruch."; exit 1
+          fi
           # Die öffentliche Bibliothek (src/library) darf keine Sessions, Notizen, To-dos usw. enthalten.
           if grep -rqiE "(sessions|todos|inbox|wishes)[^a-z]{1,3}:" src/library; then
             echo "Persönliche Daten in src/library – Abbruch."; exit 1
@@ -117,7 +129,7 @@ jobs:
         env:
           CI: "true"
           ENGINES: chromium
-          SUITES: scenarios,states,offline,perf,matrix
+          SUITES: scenarios,states,offline,perf,demo,matrix
           QUICK: "1"
           SUITE_TIMEOUT_MIN: "5"
       - name: Ergebnisse bei Fehlern speichern

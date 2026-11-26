@@ -10,6 +10,8 @@ import { db } from "./db";
 import { Boundary, StartupError } from "./components/ErrorScreen";
 import { startUpdates } from "./update";
 import { initKeyboard } from "./keyboard";
+import { ensureDemo } from "./demo/control";
+import { applyRecordClass } from "./demo/mode";
 
 applyTheme();
 initKeyboard();
@@ -26,7 +28,9 @@ void requestPersistence();
 const root = createRoot(document.getElementById("root")!);
 // Erst die Datenbank öffnen: scheitert das (privater Modus, Speicher gesperrt), gibt es eine ruhige Fehlerseite statt einer leeren.
 db.open().then(
-  () => {
+  async () => {
+    await ensureDemo().catch(() => undefined); // nur im Demo-Modus
+    applyRecordClass();
     void ensureFlagSkill().then(() => ensureCubeSkill()).catch(() => undefined);
     root.render(<StrictMode><Boundary><App /></Boundary></StrictMode>);
     startUpdates();

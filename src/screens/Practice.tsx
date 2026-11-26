@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Recording } from "../db";
 import { dateLabel, loadSetting, saveSetting, timeLabel, whenLabel } from "../logic";
 import { Metronome, BPM_MAX, BPM_MIN, METERS, clampBpm, meterOf, stopAllMetronomes } from "../metronome";
+import { recordMode, useRecordMode } from "../demo/mode";
 import { RECORDER_HINT, errorTip, recorderSupported, startRecording, type ActiveRecording, type RecorderError } from "../recorder";
 import { addRecording, clipStorage, missingRecordingIds, recordingsOf, recordingsOfUnit, removeRecording, removeRecordings, sizeLabel, storageWarning, updateRecording, type ClipStorage } from "../units";
 import { AutoTextarea, Fold, Group, Row, Sheet, Switch, SwipeRow, useUI } from "../components/ui";
@@ -189,7 +190,7 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
     if (!blob.size) { setDetail({ name: "LeereAufnahme", tip: "Das Mikrofon hat nichts geliefert. Beende andere Audio-Apps und versuche es noch einmal." }); return setHint("Es wurde nichts aufgenommen."); }
     await addRecording({ unitId, partId, blob, duration, mime });
     const warn = storageWarning(await clipStorage());
-    toast(warn ?? "Aufnahme gespeichert – nur auf diesem Gerät.");
+    toast(warn && !recordMode() ? warn : "Aufnahme gespeichert – nur auf diesem Gerät.");
   };
 
   const removeOne = (r: Recording) => {
@@ -213,7 +214,8 @@ export function RecordingsFold({ unitId, partId }: { unitId: string; partId: str
   };
 
   const unsupported = !recorderSupported();
-  const warn = storage ? storageWarning(storage) : null;
+  const demoRec = useRecordMode();
+  const warn = storage && !demoRec ? storageWarning(storage) : null;
 
   return (
     <Fold title="Aufnahmen" icon="mic" summary={recs?.length ? String(recs.length) : ""}

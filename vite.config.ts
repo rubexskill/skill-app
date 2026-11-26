@@ -15,6 +15,8 @@ export default defineConfig({
   server: { host: true, port: 5173 },
   // Die Startdaten (192 Einträge mit Steckbriefen) sind eingebaut – daher etwas größer.
   build: { chunkSizeWarningLimit: 900 },
+  // Demo-Modus nur in der öffentlichen Version (ohne persönliche Startdaten)
+  define: { __DEMO__: JSON.stringify(!usePrivateSeed) },
   plugins: [
     react(),
     VitePWA({
@@ -40,7 +42,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}", "demo/*.{mp4,m4a}"],
         globIgnores: ["splash/**"],
         navigateFallback: "index.html",
       },

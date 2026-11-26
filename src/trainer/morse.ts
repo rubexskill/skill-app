@@ -1,3 +1,4 @@
+import { settingKey } from "../demo/mode";
 /** Morse-Logik ohne Oberfläche: Tabelle, Koch-Reihenfolge, Zeitberechnung (PARIS/Farnsworth). */
 
 export const MORSE: Record<string, string> = {
@@ -82,7 +83,7 @@ const KEY = "skills.morse";
 export function loadPrefs(): MorsePrefs {
   const d: MorsePrefs = { charWpm: 20, effWpm: 10, koch: 2 };
   try {
-    const p = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+    const p = JSON.parse(localStorage.getItem(settingKey(KEY)) ?? "{}");
     return {
       charWpm: [15, 20, 25].includes(p.charWpm) ? p.charWpm : d.charWpm,
       effWpm: [5, 8, 10, 15, 20, 25].includes(p.effWpm) ? p.effWpm : d.effWpm,
@@ -91,5 +92,5 @@ export function loadPrefs(): MorsePrefs {
   } catch { return d; }
 }
 export function savePrefs(p: MorsePrefs) {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* privater Modus */ }
+  try { localStorage.setItem(settingKey(KEY), JSON.stringify(p)); } catch { /* privater Modus */ }
 }

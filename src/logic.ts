@@ -1,6 +1,7 @@
 import { BACKUP_FORMAT, BACKUP_TABLES, BACKUP_VERSION, MAX_BACKUP_BYTES, parseBackupText, type Backup, type ParsedBackup } from "./backupfile";
 import { db, uid, withoutHooks, type LinkItem, type Milestone, type Movement, type Place, type Profile, type RecordEntry, type Session, type Skill, type Status, type Todo, type Typ, type Unit } from "./db";
 import { defaultLists, withDefaults } from "./seed";
+import { settingKey } from "./demo/mode";
 
 // ---------------- Zeit & Datum ----------------
 
@@ -510,7 +511,7 @@ export async function restoreBackup(data: Backup) {
 
 export function loadSetting<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(settingKey(key));
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -519,7 +520,7 @@ export function loadSetting<T>(key: string, fallback: T): T {
 
 export function saveSetting(key: string, value: unknown) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(settingKey(key), JSON.stringify(value));
   } catch {
     /* privater Modus o. Ä. */
   }

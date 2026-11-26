@@ -6,7 +6,7 @@ import path from "node:path";
 import { buildDist, resultsDir } from "./lib.mjs";
 
 const dist = buildDist();
-const suites = (process.env.SUITES || "scenarios,states,offline,perf,a11y,cube,cubeplay,matrix,monkey").split(",");
+const suites = (process.env.SUITES || "scenarios,states,offline,perf,demo,a11y,cube,cubeplay,matrix,monkey").split(",");
 const limit = Number(process.env.SUITE_TIMEOUT_MIN || 0);
 let failed = false;
 const rows = [];

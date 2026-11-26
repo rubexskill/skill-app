@@ -1,3 +1,4 @@
+import { settingKey } from "../../demo/mode";
 // Speicher des Flaggen-Trainers: Lernstand (Dexie), Einstellungen und Zwischenstand (lokal), Lernzeit.
 import { db } from "../../db";
 import { addPracticeTimeFor } from "../practice";
@@ -28,7 +29,7 @@ export const savePrefs = (p: Prefs) => saveSetting(PREFS_KEY, p);
 
 export function loadRun(): Run | null {
   try {
-    const raw = localStorage.getItem(RUN_KEY);
+    const raw = localStorage.getItem(settingKey(RUN_KEY));
     const run = raw ? parseRun(raw) : null;
     return run && (run.endless || run.queue.length > 0) ? run : null;
   } catch {
@@ -37,7 +38,7 @@ export function loadRun(): Run | null {
 }
 export const saveRun = (r: Run) => saveSetting(RUN_KEY, r);
 export function clearRun() {
-  try { localStorage.removeItem(RUN_KEY); } catch { /* ohne Speicher kein Zwischenstand */ }
+  try { localStorage.removeItem(settingKey(RUN_KEY)); } catch { /* ohne Speicher kein Zwischenstand */ }
 }
 
 // ---------------- Lernzeit ----------------
