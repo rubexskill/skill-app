@@ -2036,3 +2036,9 @@ html:has(.mini.is-shown) .toast { bottom: calc(var(--tabbar-h) + var(--safe-bott
 
 .head-with-link { align-items: center; min-height: 44px; margin-top: -8px; }
 .head-with-link .text-btn { min-height: 44px; padding: 0 10px; margin-right: -10px; }
+
+/* Sehr große Schrift (schmale Breite): Wochenleiste untereinander */
+@media (max-width: 340px) {
+  .weekstrip { flex-direction: column; align-items: stretch; gap: 10px; }
+  .weekstrip-days { justify-content: space-between; }
+}

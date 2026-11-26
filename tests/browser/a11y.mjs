@@ -67,6 +67,8 @@ for (const [w, h, name] of [[300, 650, "130 %"], [244, 530, "160 %"]]) {
   const { context, page, errors } = await openApp(dist, eng, { width: w, height: h, scheme: "light" });
   try {
     await seedRich(page);
+    // ungünstigster Fall: breite Ersatzschrift (wie auf Linux-Rechnern); iOS-Schrift ist schmaler
+    await page.addStyleTag({ content: '*{font-family:"DejaVu Sans",sans-serif !important}' });
     const V = (sel) => page.locator(sel).locator("visible=true");
     const check = async (n) => { await sleep(250); let lp = await layoutProblems(page); if (lp.length) { await sleep(700); lp = await layoutProblems(page); } const np = await nameProblems(page); for (const p of [...lp, ...np]) await rep.fail(page, `Schrift ${name} · ${n}: ${p}`, `a11y-schrift-${n}`); if (!lp.length && !np.length) rep.ok(true); };
     for (const t of ["Übersicht", "Heute", "To-dos", "Inbox", "Mehr"]) { await tabTap(page, t); await check(t); }
