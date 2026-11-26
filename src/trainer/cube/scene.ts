@@ -9,6 +9,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { FACE_COLORS, STICKERS, applyMove, cloneCube, quarterTurns, solvedCube, stickerIndex, type Cube, type Vec } from "./engine";
 import { DRAG_THRESHOLD, chooseLayerDrag, dragAngle, moveForDrag, snapQuarters, type LayerDrag } from "./drag";
+import { motionMs, prefersReducedMotion } from "../../motion";
 import { IDLE, step as gestureStep, type Ev, type Fx, type GState } from "./gesture";
 import { DEFAULT_PITCH, DEFAULT_YAW, blendToDefault, clampPitch, clampZoom, normalizeYaw, rotateView as turnView } from "./view";
 
@@ -60,6 +61,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     return null;
   }
   sceneCounters.created++;
+  const reduced = prefersReducedMotion(); // keine Trägheit, kurze Animationen
   const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(o: T): T => { disposables.push(o); return o; };
 
@@ -283,11 +285,11 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
       grab(spec.axis, spec.layer, job.highlight);
       const target = q * TAU4;
       anim = {
-        from: 0, to: target, start: performance.now(), dur: job.ms * (Math.abs(q) === 2 ? 1.5 : 1), ease: job.ms < 120 ? easeOut : easeInOut,
+        from: 0, to: target, start: performance.now(), dur: motionMs(job.ms * (Math.abs(q) === 2 ? 1.5 : 1), reduced), ease: job.ms < 120 ? easeOut : easeInOut,
         onDone: () => {
           if (job.preview) {
             // zurückdrehen, ohne den Zustand zu ändern
-            anim = { from: target, to: 0, start: performance.now(), dur: job.ms, ease: easeInOut, onDone: () => { release(); i++; next(); } };
+            anim = { from: target, to: 0, start: performance.now(), dur: motionMs(job.ms, reduced), ease: easeInOut, onDone: () => { release(); i++; next(); } };
             request();
           } else { commit(move); i++; next(); }
         },
@@ -365,7 +367,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     const target = q * TAU4;
     const dist = Math.abs(target - angle);
     anim = {
-      from: angle, to: target, start: performance.now(), dur: 110 + Math.min(1, dist / TAU4) * 120, ease: easeOut,
+      from: angle, to: target, start: performance.now(), dur: motionMs(110 + Math.min(1, dist / TAU4) * 120, reduced), ease: easeOut,
       onDone: () => {
         gesture = "none";
         if (q !== 0 && d) {
@@ -393,7 +395,7 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
         if (!cancelled && moved < 8 && now - start.t < 300) {
           // Doppeltippen auf den Hintergrund: Standardansicht
           if (now - lastTap.t < 330 && Math.hypot(lastUp.x - lastTap.x, lastUp.y - lastTap.y) < 28) { lastTap = { t: 0, x: 0, y: 0 }; view.resetView(); } else lastTap = { t: now, x: lastUp.x, y: lastUp.y };
-        } else if (!cancelled && now - lastMove.t < 80) {
+        } else if (!reduced && !cancelled && now - lastMove.t < 80) {
           inertia = { yaw: Math.max(-6, Math.min(6, viewVel.yaw)), pitch: Math.max(-6, Math.min(6, viewVel.pitch)) };
           request();
         }
@@ -529,10 +531,10 @@ export function createCubeScene(host: HTMLElement, opts: SceneOptions): SceneHan
     cancelQueue() { for (const j of queue.splice(0)) j.resolve(false); if (running) running.canceled = true; },
     resetView() {
       inertia = { yaw: 0, pitch: 0 };
-      viewAnim = { yaw, pitch, fromZoom: zoom, start: performance.now(), dur: 380 };
+      viewAnim = { yaw, pitch, fromZoom: zoom, start: performance.now(), dur: motionMs(380, reduced, 1) };
       request();
     },
-    spin() { inertia = { yaw: 3.4, pitch: 0 }; request(); },
+    spin() { if (reduced) return; inertia = { yaw: 3.4, pitch: 0 }; request(); },
     busy: () => !idle() || queue.length > 0,
   };
 

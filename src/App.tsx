@@ -144,7 +144,7 @@ function PhoneShell() {
         </div>
       ))}
 
-      <div className={`mini${showMini ? " is-shown" : ""}`} aria-hidden={!showMini}>
+      <div className={`mini${showMini ? " is-shown" : ""}`} aria-hidden={!showMini} inert={!showMini}>
         {running && (
           <div className="mini-inner cv" style={catVars(running.kategorie)} role="button" tabIndex={0} onClick={() => push(tab, { type: "skill", id: running.id })}>
             <span className="mini-icon"><CategoryIcon name={running.kategorie} size={18} /></span>

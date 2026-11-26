@@ -141,7 +141,7 @@ export function Stack({ pages, onPop }: { pages: StackPage[]; onPop: () => void 
           if (i === top && leaving) cls.push("is-leaving");
           return (
             <div key={p.key} ref={(el) => { refs.current[i] = el; }} className={cls.join(" ")} onAnimationEnd={(e) => onAnimEnd(i, e)}
-              aria-hidden={i !== top}>
+              aria-hidden={i !== top} inert={i !== top} role={i === top ? "main" : undefined}>
               {p.node}
             </div>
           );

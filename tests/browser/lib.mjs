@@ -433,3 +433,126 @@ export function colorClass([r, g, b]) {
   const id = h < 12 || h >= 330 ? 1 : h < 38 ? 4 : h < 75 ? 3 : h < 190 ? 2 : 5;
   return { id, sat, hue: h };
 }
+
+// ---------------- Barrierefreiheit ----------------
+
+/** Sichtbare Bedienelemente ohne Namen (VoiceOver würde „Taste“ sagen) und Elemente in versteckten Bereichen, die den Fokus bekommen können */
+export async function nameProblems(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && !e.closest("[aria-hidden='true']:not(.sheet-layer)") && !e.closest("[inert]"); };
+    const textOf = (e) => [...e.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : n.nodeType === 1 && n.getAttribute("aria-hidden") !== "true" ? textOf(n) : "")).join(" ").trim();
+    for (const e of document.querySelectorAll("button, a[href], [role=button], [role=switch], [role=checkbox], [role=tab], summary, input, select, textarea")) {
+      if (!vis(e)) continue;
+      if (e.matches("input[type=hidden], input[type=file]")) continue;
+      const labelled = e.getAttribute("aria-label")?.trim() || (e.getAttribute("aria-labelledby") && document.getElementById(e.getAttribute("aria-labelledby"))?.textContent?.trim()) || e.getAttribute("title")?.trim();
+      const text = textOf(e);
+      const label = e.labels?.length ? [...e.labels].map((l) => l.textContent).join("").trim() : "";
+      const placeholder = e.getAttribute("placeholder")?.trim();
+      if (!labelled && !text && !label && !placeholder) out.push(`ohne Namen: <${e.tagName.toLowerCase()} class="${(e.className || "").toString().slice(0, 40)}">`);
+    }
+    return out;
+  });
+}
+
+function parseRgb(s) { const m = /rgba?\(([^)]+)\)/.exec(s); if (!m) return null; const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r, g, b, a }; }
+
+/** Text-Kontrast (WCAG AA: 4,5, großer Text 3) für sichtbaren Text auf einfarbigem Grund; liefert eindeutige Paare */
+export async function contrastProblems(page) {
+  return page.evaluate(() => {
+    const parse = (s) => { const m = /rgba?\(([^)]+)\)/.exec(s); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const over = (top, bottom) => ({ r: top.r * top.a + bottom.r * (1 - top.a), g: top.g * top.a + bottom.g * (1 - top.a), b: top.b * top.a + bottom.b * (1 - top.a), a: 1 });
+    const bgOf = (el) => {
+      const layers = [];
+      for (let e = el; e; e = e.parentElement) {
+        const cs = getComputedStyle(e);
+        if (cs.backgroundImage !== "none") return null; // Verlauf/Bild: nicht prüfbar
+        const c = parse(cs.backgroundColor);
+        if (c && c.a > 0) { layers.push(c); if (c.a >= 1) break; }
+      }
+      let base = { r: parseInt(getComputedStyle(document.body).backgroundColor.match(/\d+/g)?.[0] ?? "255"), g: 255, b: 255, a: 1 };
+      const bb = parse(getComputedStyle(document.body).backgroundColor) ?? { r: 255, g: 255, b: 255, a: 1 };
+      base = { ...bb, a: 1 };
+      for (const l of layers.reverse()) base = over(l, base);
+      return base;
+    };
+    const modal = !!document.querySelector(".sheet-layer.is-shown, .as-layer.is-shown");
+    const seen = new Map();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.textContent.trim();
+      if (!text) continue;
+      const el = n.parentElement;
+      if (!el || el.closest("[aria-hidden='true']:not(.sheet-layer), [inert], script, style, canvas, svg, :disabled, [aria-disabled='true']")) continue;
+      if (modal && !el.closest(".sheet-layer.is-shown, .as-layer.is-shown")) continue; // hinter einem geöffneten Blatt gilt der Kontrast nicht
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      if (r.width < 1 || r.height < 1 || cs.visibility === "hidden" || cs.display === "none" || r.bottom < 0 || r.top > innerHeight) continue;
+      let op = 1; for (let e = el; e; e = e.parentElement) op *= parseFloat(getComputedStyle(e).opacity);
+      if (op < 0.2) continue;
+      const fg0 = parse(cs.color); const bg = bgOf(el);
+      if (!fg0 || !bg) continue;
+      const fg = over({ ...fg0, a: fg0.a * op }, bg);
+      const L1 = lum(fg), L2 = lum(bg);
+      const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+      const px = parseFloat(cs.fontSize), bold = parseInt(cs.fontWeight) >= 700;
+      const need = px >= 24 || (px >= 18.66 && bold) ? 3 : 4.5;
+      if (ratio + 0.005 < need) {
+        const key = `${cs.color}|${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)}`;
+        if (!seen.has(key)) seen.set(key, `Kontrast ${ratio.toFixed(2)} (nötig ${need}): „${text.slice(0, 24)}“ ${el.className?.toString().slice(0, 30)} ${cs.color} auf rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})`);
+      }
+    }
+    return [...seen.values()];
+  });
+}
+
+/** Mit Tab durch die Seite: der Fokus darf nie in versteckte Bereiche oder außer Sicht wandern */
+export async function focusProblems(page, steps = 24) {
+  const out = [];
+  await page.evaluate(() => document.activeElement?.blur());
+  for (let i = 0; i < steps; i++) {
+    await page.keyboard.press("Tab");
+    const info = await page.evaluate(() => {
+      const e = document.activeElement;
+      if (!e || e === document.body) return null;
+      const r = e.getBoundingClientRect();
+      return { hidden: !!e.closest("[aria-hidden='true']:not(.sheet-layer), [inert]"), visible: r.width > 0 && r.height > 0, tag: `${e.tagName.toLowerCase()}.${(e.className || "").toString().slice(0, 30)}`, top: r.top, bottom: r.bottom };
+    });
+    if (!info) continue;
+    if (info.hidden) out.push(`Fokus in verstecktem Bereich: ${info.tag}`);
+    else if (!info.visible) out.push(`Fokus auf unsichtbarem Element: ${info.tag}`);
+  }
+  return [...new Set(out)];
+}
+
+/** Tippflächen mindestens 44 × 44 pt: Größe des Elements oder – bei erweiterter Trefferfläche – Treffertest 22 px um die Mitte */
+export async function tapProblems(page) {
+  return page.evaluate(() => {
+    const out = new Set();
+    const modal = !!document.querySelector(".sheet-layer.is-shown, .as-layer.is-shown");
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && !e.closest("[aria-hidden='true']:not(.sheet-layer)") && !e.closest("[inert]") && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
+    for (const e of document.querySelectorAll("button, a[href], [role=button], [role=switch], [role=checkbox], summary, input:not([type=hidden]):not([type=file]), select")) {
+      if (!vis(e) || e.disabled) continue;
+      const tb = document.querySelector(".tabbar")?.getBoundingClientRect();
+      const rr = e.getBoundingClientRect();
+      if (tb && !e.closest(".tabbar") && rr.bottom + 22 > tb.top && rr.top < tb.bottom) continue; // unter der Tab-Leiste weggescrollt
+      if (e.closest(".cz-moves")) continue;       // Notationsmarken: bewusst Gruppe aus 44-px-Feldern
+      if (e.closest("p, .footnote") && e.tagName === "A") continue; // Link im Fließtext
+      const r = e.getBoundingClientRect();
+      if (r.width >= 43.5 && r.height >= 43.5) continue;
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const hit = (x, y) => { const t = document.elementFromPoint(x, y); return !!t && (t === e || e.contains(t)); };
+      const okW = r.width >= 43.5 || (hit(cx - 21.5, cy) && hit(cx + 21.5, cy));
+      const okH = r.height >= 43.5 || (hit(cx, cy - 21.5) && hit(cx, cy + 21.5));
+      if (okW && okH) continue;
+      // kompakte Bedienelemente (ab 28 px) in einer mindestens 44 px hohen Zeile oder Leiste (Segmentschalter, Chips) sind in Ordnung
+      const host = e.closest(".row, .segmented-row, .panel-seg, .list-pills, .filter-chips, .head-meta, .list-tools, .cz-pl-bar");
+      if (r.width >= 28 && r.height >= 28 && host && host.getBoundingClientRect().height >= 43.5) continue;
+      if (e.closest(".segmented") && r.height >= 28) continue; // Segmentschalter (32 pt wie bei Apple)
+      if (modal && !e.closest(".sheet-layer.is-shown, .as-layer.is-shown")) continue; // hinter einem geöffneten Blatt nicht erreichbar
+      if (true) out.add(`Tippfläche ${Math.round(r.width)}×${Math.round(r.height)}: ${e.getAttribute("aria-label") || e.textContent?.trim().slice(0, 20) || e.className.toString().slice(0, 30)}`);
+    }
+    return [...out];
+  });
+}

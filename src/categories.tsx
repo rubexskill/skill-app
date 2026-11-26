@@ -42,21 +42,21 @@ const CAT_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  "Körper & Sport": { icon: "dumbbell", light: "#CF5F3E", dark: "#EE8463" },
-  "Tricks, Geschick & Mentalismus": { icon: "cards", light: "#A8871C", dark: "#D9B648" },
-  "Kopf: Rechnen, Gedächtnis & Denken": { icon: "bulb", light: "#3B6FB0", dark: "#73A2E2" },
-  "Natur, Erde & Himmel": { icon: "leaf", light: "#3E8B53", dark: "#6CC084" },
-  "Wissen & Verstehen": { icon: "book", light: "#25837F", dark: "#5DC1BA" },
-  "Menschen, Sprache & Kommunikation": { icon: "bubbles", light: "#BE5177", dark: "#E67FA1" },
-  "Atmung, Sinne & Körperkontrolle": { icon: "wind", light: "#2F8DB0", dark: "#66BEDF" },
-  "Mindset & Fokus": { icon: "target", light: "#5C6977", dark: "#9DA9B6" },
-  "Kreativ & Alltag": { icon: "pencil", light: "#D27A22", dark: "#F0A257" },
-  Gewohnheiten: { icon: "repeat", light: "#788B2E", dark: "#AFC35D" },
-  "Projekte & Besorgungen": { icon: "checklist", light: "#946D49", dark: "#C9A27D" },
-  "Erst rausfinden, was das ist": { icon: "question", light: "#86868B", dark: "#A1A1A6" },
+  "Körper & Sport": { icon: "dumbbell", light: "#A64C32", dark: "#EE8463" },
+  "Tricks, Geschick & Mentalismus": { icon: "cards", light: "#7C6415", dark: "#D9B648" },
+  "Kopf: Rechnen, Gedächtnis & Denken": { icon: "bulb", light: "#3768A5", dark: "#73A2E2" },
+  "Natur, Erde & Himmel": { icon: "leaf", light: "#337345", dark: "#6CC084" },
+  "Wissen & Verstehen": { icon: "book", light: "#20726E", dark: "#5DC1BA" },
+  "Menschen, Sprache & Kommunikation": { icon: "bubbles", light: "#A54668", dark: "#E67FA1" },
+  "Atmung, Sinne & Körperkontrolle": { icon: "wind", light: "#256E89", dark: "#66BEDF" },
+  "Mindset & Fokus": { icon: "target", light: "#5B6876", dark: "#9DA9B6" },
+  "Kreativ & Alltag": { icon: "pencil", light: "#955718", dark: "#F0A257" },
+  Gewohnheiten: { icon: "repeat", light: "#5E6C24", dark: "#AFC35D" },
+  "Projekte & Besorgungen": { icon: "checklist", light: "#826040", dark: "#C9A27D" },
+  "Erst rausfinden, was das ist": { icon: "question", light: "#66666A", dark: "#A1A1A6" },
 };
 
-const FALLBACK: CategoryStyle = { icon: "folder", light: "#6E7781", dark: "#A3ABB4" };
+const FALLBACK: CategoryStyle = { icon: "folder", light: "#606870", dark: "#A3ABB4" };
 
 export function categoryStyle(name: string): CategoryStyle {
   return CATEGORY_STYLES[name] ?? FALLBACK;

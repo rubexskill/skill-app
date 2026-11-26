@@ -129,6 +129,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Barrierefreiheit: Namen, Kontrast (AA), Fokus, große Schrift – blockiert die Veröffentlichung
+  a11y:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten installieren
+        run: npm ci
+        timeout-minutes: 5
+      - name: Chromium installieren
+        run: npx playwright-core install --with-deps chromium
+        timeout-minutes: 5
+      - name: Barrierefreiheit prüfen
+        run: npm run test:e2e
+        timeout-minutes: 12
+        env:
+          CI: "true"
+          ENGINES: chromium
+          SUITES: a11y
+          SUITE_TIMEOUT_MIN: "9"
+      - name: Ergebnisse speichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testergebnisse-a11y
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
   # ---- Schwere Tests (3D-Würfel, Affentest, WebKit): laufen parallel, melden Fehler, blockieren die Veröffentlichung nicht ----
   e2e-heavy:
     name: "e2e-heavy (${{ matrix.engine }} · ${{ matrix.suites }})"
@@ -179,7 +212,7 @@ jobs:
 
   deploy:
     timeout-minutes: 10
-    needs: [build, browser, e2e-core]
+    needs: [build, browser, e2e-core, a11y]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

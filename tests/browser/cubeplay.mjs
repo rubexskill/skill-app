@@ -295,7 +295,9 @@ for (const eng of engines) {
     await tap(page, btn("Ein Zug weiter"), 200); await cubeIdle(page);
     await page.evaluate(() => { document.querySelector(".sheet-body").scrollTop = 0; window.__cube3d.setView(-10, 10); }); // Phasenliste war offen: Würfel wieder ins Bild
     const a = await xy([0, 1, 1], [0, 0, 1]), b = await xy([1, 1, 1], [0, 0, 1]);
-    await dragMouse(page, a[0], a[1], (b[0] - a[0]) * 1.8, (b[1] - a[1]) * 1.8, { steps: 8, wait: 12 });
+    // Der eigene Zug darf nicht zufällig der nächste Zug der Lösung sein (dann läuft die Lösung einfach weiter): nach rechts ziehen ergibt U', nach links U
+    const dir = (await session()).moves[1] === "U'" ? -1 : 1;
+    await dragMouse(page, a[0], a[1], dir * (b[0] - a[0]) * 1.8, dir * (b[1] - a[1]) * 1.8, { steps: 8, wait: 12 });
     await cubeIdle(page);
     // Neuberechnen ist asynchron (React): auf die neue Sitzung warten
     await page.waitForFunction(() => window.__cubeSession && window.__cubeSession.start === window.__cube3d.state() && /Neu berechnet/.test(document.querySelector('.cz-pl-reason')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => {});
